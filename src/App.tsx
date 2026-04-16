@@ -6,7 +6,7 @@
  * 
  * Flow: StartScreen picks the model source → Viewer mounts → engine loads the model.
  */
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useCallback, useEffect } from 'react'
 import { EngineAPI } from './engine/EngineAPI'
 import { StartScreen } from './ui/StartScreen'
 import { Viewport } from './ui/Viewport'
@@ -29,6 +29,14 @@ function App() {
   const handleModelSelected = useCallback((source: ModelSource) => {
     setModelSource(source)
   }, [])
+
+  useEffect(() => {
+    window.threeMotion = engine.getConsoleAPI()
+
+    return () => {
+      delete window.threeMotion
+    }
+  }, [engine])
 
   // Show start screen until user makes a choice
   if (!modelSource) {

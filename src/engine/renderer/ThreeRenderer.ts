@@ -36,6 +36,8 @@ export class ThreeRenderer {
 
   turntable: TurntableController | null = null
   onProductTransformChange: (() => void) | null = null
+  onTransformInteractionStart: (() => void) | null = null
+  onTransformInteractionEnd: (() => void) | null = null
   private container: HTMLElement | null = null
   private resizeObserver: ResizeObserver | null = null
   private animationFrameId = 0
@@ -76,6 +78,11 @@ export class ThreeRenderer {
     })
     this.transformControls.addEventListener('dragging-changed', (event) => {
       const isDragging = Boolean((event as { value?: boolean }).value)
+      if (isDragging) {
+        this.onTransformInteractionStart?.()
+      } else {
+        this.onTransformInteractionEnd?.()
+      }
       if (this.turntable) {
         this.turntable.enabled = !isDragging && this.transformMode === null
       }

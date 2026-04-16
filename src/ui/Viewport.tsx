@@ -21,6 +21,8 @@ interface ViewportProps {
 export function Viewport({ engine, modelSource }: ViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isLoading = useEngineStore((s) => s.isLoading)
+  const canUndo = useEngineStore((s) => s.canUndo)
+  const canRedo = useEngineStore((s) => s.canRedo)
   const hasInitialized = useRef(false)
   const [transformMode, setTransformMode] = useState<TransformGizmoMode | null>('rotate')
 
@@ -51,14 +53,14 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
     }
 
     // Small delay to let HDRI load first for better visual experience
-    setTimeout(loadModel, 500)
+    const loadTimer = window.setTimeout(loadModel, 500)
 
     return () => {
+      window.clearTimeout(loadTimer)
       engine.dispose()
       hasInitialized.current = false
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [engine, modelSource])
 
   useEffect(() => {
     engine.setTransformGizmoMode(transformMode)
@@ -67,9 +69,32 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.repeat) return
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
+      if (
+        event.target instanceof HTMLInputElement
+        || event.target instanceof HTMLTextAreaElement
+        || (event.target instanceof HTMLElement && event.target.isContentEditable)
+      ) {
+        return
+      }
 
-      switch (event.key.toLowerCase()) {
+      const key = event.key.toLowerCase()
+      const isUndoRedoChord = event.ctrlKey || event.metaKey
+
+      if (isUndoRedoChord) {
+        if (key === 'z' && !event.shiftKey) {
+          event.preventDefault()
+          void engine.undo()
+          return
+        }
+
+        if (key === 'r' || (key === 'z' && event.shiftKey)) {
+          event.preventDefault()
+          void engine.redo()
+          return
+        }
+      }
+
+      switch (key) {
         case 'q':
           setTransformMode(null)
           break
@@ -89,11 +114,33 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [engine])
 
   return (
     <div id="viewport-wrapper" className="viewport-wrapper">
       <div ref={containerRef} className="viewport-canvas" />
+      <div className="viewport-history-toolbar">
+        <button
+          className="viewport-history-btn"
+          onClick={() => void engine.undo()}
+          type="button"
+          disabled={!canUndo}
+          title="Undo (Ctrl/Cmd+Z)"
+        >
+          <span>Undo</span>
+          <strong>Ctrl+Z</strong>
+        </button>
+        <button
+          className="viewport-history-btn"
+          onClick={() => void engine.redo()}
+          type="button"
+          disabled={!canRedo}
+          title="Redo (Ctrl/Cmd+R)"
+        >
+          <span>Redo</span>
+          <strong>Ctrl+R</strong>
+        </button>
+      </div>
       <div className="viewport-toolbar">
         <button
           className={`viewport-tool-btn ${transformMode === null ? 'active' : ''}`}

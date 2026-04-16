@@ -108,6 +108,21 @@ html, body, #root {
   z-index: 8;
 }
 
+.viewport-history-toolbar {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(17, 17, 24, 0.82);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  backdrop-filter: blur(14px);
+  z-index: 8;
+}
+
 .viewport-tool-btn {
   border: 1px solid transparent;
   background: rgba(255, 255, 255, 0.03);
@@ -151,6 +166,51 @@ html, body, #root {
 
 .viewport-tool-btn.active span {
   color: var(--accent-hover);
+}
+
+.viewport-history-btn {
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 108px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition:
+    background 0.2s var(--ease-out),
+    border-color 0.2s var(--ease-out),
+    color 0.2s var(--ease-out),
+    transform 0.2s var(--ease-out),
+    opacity 0.2s var(--ease-out);
+}
+
+.viewport-history-btn span {
+  color: var(--text-secondary);
+}
+
+.viewport-history-btn strong {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.viewport-history-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.viewport-history-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* ── Viewport Loader ── */

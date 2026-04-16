@@ -24,6 +24,8 @@ export interface EngineState {
   isLoading: boolean
   entities: EntityInfo[]
   hasModel: boolean
+  canUndo: boolean
+  canRedo: boolean
 
   // ── Lighting ──
   activeHDRI: HDRIPreset
@@ -41,6 +43,7 @@ export interface EngineState {
   setLoading: (v: boolean) => void
   setEntities: (e: EntityInfo[]) => void
   setHasModel: (v: boolean) => void
+  setHistoryAvailability: (history: { canUndo: boolean; canRedo: boolean }) => void
   setActiveHDRI: (h: HDRIPreset) => void
   setExposure: (v: number) => void
   setBloom: (b: BloomSettings) => void
@@ -53,6 +56,8 @@ export const useEngineStore = create<EngineState>((set) => ({
   isLoading: false,
   entities: [],
   hasModel: false,
+  canUndo: false,
+  canRedo: false,
 
   activeHDRI: 'studio',
   exposure: 1.0,
@@ -72,6 +77,7 @@ export const useEngineStore = create<EngineState>((set) => ({
   setLoading: (v) => set({ isLoading: v }),
   setEntities: (e) => set({ entities: e }),
   setHasModel: (v) => set({ hasModel: v }),
+  setHistoryAvailability: ({ canUndo, canRedo }) => set({ canUndo, canRedo }),
   setActiveHDRI: (h) => set({ activeHDRI: h }),
   setExposure: (v) => set({ exposure: v }),
   setBloom: (b) => set({ bloom: b }),
