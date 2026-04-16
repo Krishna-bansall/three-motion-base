@@ -35,6 +35,7 @@ export class TurntableController {
 
   autoRotate: boolean
   autoRotateSpeed: number
+  enabled = true
 
   // bound handlers for cleanup
   private _onPointerDown: (e: PointerEvent) => void
@@ -61,6 +62,7 @@ export class TurntableController {
   }
 
   private onPointerDown(e: PointerEvent): void {
+    if (!this.enabled) return
     this.isDragging = true
     this.prevPointer.x = e.clientX
     this.prevPointer.y = e.clientY
@@ -70,7 +72,7 @@ export class TurntableController {
   }
 
   private onPointerMove(e: PointerEvent): void {
-    if (!this.isDragging) return
+    if (!this.enabled || !this.isDragging) return
 
     const dx = e.clientX - this.prevPointer.x
     const dy = e.clientY - this.prevPointer.y
@@ -84,9 +86,9 @@ export class TurntableController {
     this.prevPointer.y = e.clientY
   }
 
-  private onPointerUp(_e: PointerEvent): void {
+  private onPointerUp(): void {
     this.isDragging = false
-    this.canvas.style.cursor = 'grab'
+    this.canvas.style.cursor = this.enabled ? 'grab' : 'default'
   }
 
   private applyRotation(deltaX: number, deltaY: number): void {
@@ -102,6 +104,8 @@ export class TurntableController {
 
   /** Call once per frame (in the render loop) */
   update(delta: number): void {
+    if (!this.enabled) return
+
     // Inertia: apply leftover velocity when not dragging
     if (!this.isDragging && this.enableInertia) {
       if (Math.abs(this.velocity.x) > 0.0001 || Math.abs(this.velocity.y) > 0.0001) {

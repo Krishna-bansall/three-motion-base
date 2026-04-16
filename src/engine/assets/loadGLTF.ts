@@ -29,6 +29,8 @@ dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5
 dracoLoader.setDecoderConfig({ type: 'js' })
 gltfLoader.setDRACOLoader(dracoLoader)
 
+type FileWithRelativePath = File & { webkitRelativePath?: string }
+
 // ── Types ───────────────────────────────────────────────────
 
 export interface LoadedModel {
@@ -94,7 +96,7 @@ export async function loadGLTFFromFiles(files: File[]): Promise<LoadedModel> {
     allBlobUrls.push(blobUrl)
 
     // Use webkitRelativePath if available (folder upload), otherwise just name
-    const relativePath = (file as any).webkitRelativePath || file.name
+    const relativePath = (file as FileWithRelativePath).webkitRelativePath || file.name
 
     // Store by filename only (no directory prefix)
     const filename = relativePath.split('/').pop() || file.name

@@ -5,7 +5,7 @@
  * Orchestrates renderer, ECS, asset loading, and store updates.
  */
 import { addComponent } from 'bitecs'
-import { ThreeRenderer, type HDRIPreset } from './renderer/ThreeRenderer'
+import { ThreeRenderer, type HDRIPreset, type TransformGizmoMode } from './renderer/ThreeRenderer'
 import { loadGLTFFromURL, loadGLTFFromFile, loadGLTFFromFiles, type LoadedModel } from './assets/loadGLTF'
 import { exportPNG } from './renderer/exportPNG'
 import { world } from './ecs/world'
@@ -28,9 +28,13 @@ export class EngineAPI {
   init(container: HTMLElement): void {
     this.threeRenderer = new ThreeRenderer()
     this.threeRenderer.mount(container)
+    this.threeRenderer.onProductTransformChange = () => this.syncProductRootTransform()
   }
 
   dispose(): void {
+    if (this.threeRenderer) {
+      this.threeRenderer.onProductTransformChange = null
+    }
     this.threeRenderer?.unmount()
     this.threeRenderer = null
   }
@@ -205,6 +209,14 @@ export class EngineAPI {
     useEngineStore.getState().setAutoRotateSpeed(speed)
   }
 
+  setTransformGizmoMode(mode: TransformGizmoMode | null): void {
+    this.threeRenderer?.setTransformMode(mode)
+  }
+
+  getTransformGizmoMode(): TransformGizmoMode | null {
+    return this.threeRenderer?.getTransformMode() ?? null
+  }
+
   // ── Cinematic / Filters ─────────────────────────────────
 
   setVignette(intensity: number): void {
@@ -276,5 +288,22 @@ export class EngineAPI {
     })
 
     useEngineStore.getState().setEntities(entities)
+  }
+
+  private syncProductRootTransform(): void {
+    if (!this.currentModel || !this.threeRenderer) return
+
+    const eid = this.currentModel.rootEid
+    const { position, rotation, scale } = this.threeRenderer.productRoot
+
+    Transform.px[eid] = position.x
+    Transform.py[eid] = position.y
+    Transform.pz[eid] = position.z
+    Transform.rx[eid] = rotation.x
+    Transform.ry[eid] = rotation.y
+    Transform.rz[eid] = rotation.z
+    Transform.sx[eid] = scale.x
+    Transform.sy[eid] = scale.y
+    Transform.sz[eid] = scale.z
   }
 }

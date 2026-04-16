@@ -5,6 +5,7 @@
  * Steps 2, 5, 6 are integrated via composition.
  */
 import * as THREE from 'three'
+import { TransformControls } from 'three/addons/controls/TransformControls.js'
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'
 import { PostProcessing } from './PostProcessing'
 import { TurntableController } from './TurntableController'
@@ -12,6 +13,7 @@ import { runSyncSystems } from '../ecs/systems'
 import { world } from '../ecs/world'
 
 export type HDRIPreset = 'studio' | 'moody' | 'daylight'
+export type TransformGizmoMode = 'translate' | 'rotate' | 'scale'
 
 /** Bundled HDRI paths (relative to /public) */
 const HDRI_PATHS: Record<HDRIPreset, string> = {
@@ -29,13 +31,17 @@ export class ThreeRenderer {
 
   /** The root group that the TurntableController rotates */
   readonly productRoot = new THREE.Group()
+  readonly transformControls: TransformControls
+  readonly transformControlsHelper: THREE.Object3D
 
   turntable: TurntableController | null = null
+  onProductTransformChange: (() => void) | null = null
   private container: HTMLElement | null = null
   private resizeObserver: ResizeObserver | null = null
   private animationFrameId = 0
   private pmremGenerator: THREE.PMREMGenerator
   private activeHDRI: HDRIPreset = 'studio'
+  private transformMode: TransformGizmoMode | null = null
 
   constructor() {
     // ── Renderer ──
@@ -58,6 +64,24 @@ export class ThreeRenderer {
     this.camera.position.set(0, 0.5, 3)
     this.camera.lookAt(0, 0, 0)
 
+    // ── Transform Controls ──
+    this.transformControls = new TransformControls(this.camera, this.renderer.domElement)
+    this.transformControls.attach(this.productRoot)
+    this.transformControls.enabled = false
+    this.transformControls.setSpace('local')
+    this.transformControlsHelper = this.transformControls.getHelper()
+    this.transformControlsHelper.visible = false
+    this.transformControls.addEventListener('objectChange', () => {
+      this.onProductTransformChange?.()
+    })
+    this.transformControls.addEventListener('dragging-changed', (event) => {
+      const isDragging = Boolean((event as { value?: boolean }).value)
+      if (this.turntable) {
+        this.turntable.enabled = !isDragging && this.transformMode === null
+      }
+    })
+    this.scene.add(this.transformControlsHelper)
+
     // ── PMREMGenerator ──
     this.pmremGenerator = new THREE.PMREMGenerator(this.renderer)
     this.pmremGenerator.compileEquirectangularShader()
@@ -75,6 +99,7 @@ export class ThreeRenderer {
 
     // Turntable controller on the product root
     this.turntable = new TurntableController(this.productRoot, this.renderer.domElement)
+    this.syncTurntableState()
 
     // Initial size
     this.resize()
@@ -95,6 +120,8 @@ export class ThreeRenderer {
     cancelAnimationFrame(this.animationFrameId)
     this.resizeObserver?.disconnect()
     this.turntable?.dispose()
+    this.transformControls.detach()
+    this.transformControls.dispose()
     this.renderer.domElement.remove()
     this.renderer.dispose()
     this.postProcessing.dispose()
@@ -166,5 +193,27 @@ export class ThreeRenderer {
 
   getExposure(): number {
     return this.renderer.toneMappingExposure
+  }
+
+  setTransformMode(mode: TransformGizmoMode | null): void {
+    this.transformMode = mode
+    this.transformControls.enabled = mode !== null
+    this.transformControlsHelper.visible = mode !== null
+
+    if (mode) {
+      this.transformControls.setMode(mode)
+    }
+
+    this.syncTurntableState()
+  }
+
+  getTransformMode(): TransformGizmoMode | null {
+    return this.transformMode
+  }
+
+  private syncTurntableState(): void {
+    if (!this.turntable) return
+    this.turntable.enabled = this.transformMode === null
+    this.renderer.domElement.style.cursor = this.transformMode === null ? 'grab' : 'default'
   }
 }

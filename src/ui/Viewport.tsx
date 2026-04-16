@@ -3,9 +3,10 @@
  * 
  * Mounts the engine, then loads the model from the provided source.
  */
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { useEngineStore } from '../store/useEngineStore'
 import type { EngineAPI } from '../engine/EngineAPI'
+import type { TransformGizmoMode } from '../engine/renderer/ThreeRenderer'
 
 type ModelSource =
   | { type: 'sample' }
@@ -21,6 +22,7 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isLoading = useEngineStore((s) => s.isLoading)
   const hasInitialized = useRef(false)
+  const [transformMode, setTransformMode] = useState<TransformGizmoMode | null>('rotate')
 
   useEffect(() => {
     if (!containerRef.current || hasInitialized.current) return
@@ -58,9 +60,74 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    engine.setTransformGizmoMode(transformMode)
+  }, [engine, transformMode])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat) return
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
+
+      switch (event.key.toLowerCase()) {
+        case 'q':
+          setTransformMode(null)
+          break
+        case 'w':
+          setTransformMode('translate')
+          break
+        case 'e':
+          setTransformMode('rotate')
+          break
+        case 'r':
+          setTransformMode('scale')
+          break
+        default:
+          break
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   return (
     <div id="viewport-wrapper" className="viewport-wrapper">
       <div ref={containerRef} className="viewport-canvas" />
+      <div className="viewport-toolbar">
+        <button
+          className={`viewport-tool-btn ${transformMode === null ? 'active' : ''}`}
+          onClick={() => setTransformMode(null)}
+          type="button"
+        >
+          Off
+          <span>Q</span>
+        </button>
+        <button
+          className={`viewport-tool-btn ${transformMode === 'translate' ? 'active' : ''}`}
+          onClick={() => setTransformMode('translate')}
+          type="button"
+        >
+          Move
+          <span>W</span>
+        </button>
+        <button
+          className={`viewport-tool-btn ${transformMode === 'rotate' ? 'active' : ''}`}
+          onClick={() => setTransformMode('rotate')}
+          type="button"
+        >
+          Rotate
+          <span>E</span>
+        </button>
+        <button
+          className={`viewport-tool-btn ${transformMode === 'scale' ? 'active' : ''}`}
+          onClick={() => setTransformMode('scale')}
+          type="button"
+        >
+          Scale
+          <span>R</span>
+        </button>
+      </div>
       {isLoading && (
         <div className="viewport-loader">
           <div className="loader-spinner" />
