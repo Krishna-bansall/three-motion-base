@@ -4,6 +4,22 @@
 
 /* ── Fonts ── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,500,0,0');
+
+.material-symbols-rounded {
+  font-family: 'Material Symbols Rounded';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  -webkit-font-feature-settings: 'liga';
+}
 
 /* ── CSS Variables ── */
 :root {
@@ -224,21 +240,107 @@ html, body, #root {
   gap: 16px;
 }
 
-/* ── Material Entity ── */
-.material-entity {
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border-subtle);
+/* ── Element Selector ── */
+.element-selector {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
-.material-entity:last-child {
-  padding-bottom: 0;
-  border-bottom: none;
+.element-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  min-height: 84px;
+  padding: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  overflow: hidden;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition:
+    transform 0.2s var(--ease-out),
+    border-color 0.2s var(--ease-out),
+    box-shadow 0.2s var(--ease-out);
+}
+
+.element-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.element-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--element-accent) 24%, transparent);
+}
+
+.element-card-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 78% 22%, color-mix(in srgb, var(--element-accent) 28%, white) 0%, transparent 52%),
+    linear-gradient(140deg, color-mix(in srgb, var(--element-accent) 32%, #0b0b10) 0%, #12121a 65%);
+  opacity: 0.92;
+}
+
+.element-card-icon {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 22px;
+  height: 22px;
+  color: color-mix(in srgb, var(--element-accent) 74%, white);
+  z-index: 1;
+}
+
+.element-card-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.element-card-name,
+.element-card-meta {
+  position: relative;
+  z-index: 1;
+}
+
+.element-card-name {
+  max-width: 100%;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.element-card-meta {
+  margin-top: 2px;
+  font-size: 10px;
+  color: rgba(232, 230, 240, 0.72);
+}
+
+.material-editor {
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ── Material Entity ── */
+.material-entity {
+  display: flex;
+  flex-direction: column;
 }
 
 .entity-name {
   display: block;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 10px;
   white-space: nowrap;
@@ -348,36 +450,138 @@ html, body, #root {
   margin-bottom: 4px;
 }
 
-.hdri-btn {
+.hdri-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 10px 6px;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 98px;
+  padding: 10px 8px 8px;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  color: var(--text-secondary);
+  border-radius: 10px;
+  color: var(--text-primary);
+  text-align: left;
   font-size: 10px;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.2s var(--ease-out);
+  overflow: hidden;
+  transform-style: preserve-3d;
+  will-change: transform;
+  transform:
+    perspective(700px)
+    rotateX(var(--tilt-x, 0deg))
+    rotateY(var(--tilt-y, 0deg))
+    translateY(0);
+  transition:
+    transform 0.22s var(--ease-out),
+    border-color 0.2s var(--ease-out),
+    box-shadow 0.2s var(--ease-out);
 }
 
-.hdri-btn:hover {
-  background: var(--bg-panel-hover);
+.hdri-card:hover {
+  transform:
+    perspective(700px)
+    rotateX(var(--tilt-x, 0deg))
+    rotateY(var(--tilt-y, 0deg))
+    translateY(-2px);
   border-color: rgba(255, 255, 255, 0.12);
-  color: var(--text-primary);
 }
 
-.hdri-btn.active {
-  background: var(--accent-glow);
+.hdri-card.active {
   border-color: var(--accent);
-  color: var(--text-primary);
+  box-shadow: 0 8px 20px rgba(124, 106, 255, 0.22);
 }
 
-.hdri-emoji {
+.hdri-card-canvas,
+.hdri-card-fade {
+  position: absolute;
+  inset: 0;
+}
+
+.hdri-card-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  transform: translate3d(
+      calc(var(--shift-x, 0px) * -0.2),
+      calc(var(--shift-y, 0px) * -0.2),
+      0
+    )
+    scale(1.03);
+  transition: transform 0.22s var(--ease-out);
+}
+
+.hdri-card-fade {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.05) 18%, rgba(8, 8, 12, 0.76) 100%);
+  pointer-events: none;
+}
+
+.hdri-card-icon,
+.hdri-card-label,
+.hdri-card-mood {
+  position: relative;
+  z-index: 1;
+}
+
+.hdri-card-icon {
+  position: absolute;
+  top: 7px;
+  left: 8px;
+  width: 28px;
+  height: 28px;
   font-size: 18px;
+  font-variation-settings: 'FILL' 1, 'wght' 600, 'opsz' 24;
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 28px;
+  text-align: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(8px);
+  transform: translate3d(
+    calc(var(--shift-x, 0px) * 0.45),
+    calc(var(--shift-y, 0px) * 0.45),
+    30px
+  );
+  transition: transform 0.22s var(--ease-out);
+}
+
+.hdri-card-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transform: translate3d(
+    calc(var(--shift-x, 0px) * 0.25),
+    calc(var(--shift-y, 0px) * 0.25),
+    24px
+  );
+  transition: transform 0.22s var(--ease-out);
+}
+
+.hdri-card-mood {
+  font-size: 9px;
+  color: rgba(232, 230, 240, 0.75);
+  transform: translate3d(
+    calc(var(--shift-x, 0px) * 0.18),
+    calc(var(--shift-y, 0px) * 0.18),
+    22px
+  );
+  transition: transform 0.22s var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hdri-card,
+  .hdri-card:hover,
+  .hdri-card-canvas,
+  .hdri-card-icon,
+  .hdri-card-label,
+  .hdri-card-mood {
+    transition: none;
+    transform: none;
+  }
 }
 
 /* ── Toggle ── */
@@ -895,4 +1099,3 @@ html, body, #root {
   opacity: 0.4;
   cursor: not-allowed;
 }
-

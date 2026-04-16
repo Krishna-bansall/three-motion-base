@@ -1,6 +1,7 @@
 /**
  * MaterialPanel — Sliders and color picker for PBR material properties.
  */
+import { useEffect, useState, type CSSProperties } from 'react'
 import { useEngineStore, type EntityInfo } from '../../store/useEngineStore'
 import type { EngineAPI } from '../../engine/EngineAPI'
 
@@ -10,6 +11,20 @@ interface MaterialPanelProps {
 
 export function MaterialPanel({ engine }: MaterialPanelProps) {
   const entities = useEngineStore((s) => s.entities)
+  const [selectedEid, setSelectedEid] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (entities.length === 0) {
+      if (selectedEid !== null) {
+        setSelectedEid(null)
+      }
+      return
+    }
+
+    if (selectedEid === null || !entities.some((entity) => entity.eid === selectedEid)) {
+      setSelectedEid(entities[0].eid)
+    }
+  }, [entities, selectedEid])
 
   if (entities.length === 0) {
     return (
@@ -20,16 +35,50 @@ export function MaterialPanel({ engine }: MaterialPanelProps) {
     )
   }
 
+  const selectedEntity = entities.find((entity) => entity.eid === selectedEid) ?? entities[0]
+
   return (
     <div className="panel" id="material-panel">
       <h3 className="panel-title">Material</h3>
-      <div className="panel-scroll">
-        {entities.map((entity) => (
-          <MaterialEntity key={entity.eid} entity={entity} engine={engine} />
-        ))}
+      <label className="slider-label"><span>Elements</span></label>
+      <div className="element-selector">
+        {entities.map((entity, index) => {
+          const elementStyle = {
+            '--element-accent': rgbToCss(entity.r, entity.g, entity.b),
+          } as CSSProperties
+
+          return (
+            <button
+              key={entity.eid}
+              className={`element-card ${selectedEntity.eid === entity.eid ? 'active' : ''}`}
+              onClick={() => setSelectedEid(entity.eid)}
+              style={elementStyle}
+            >
+              <span className="element-card-bg" aria-hidden />
+              <span className="element-card-icon" aria-hidden>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                  <polyline points="3.3 7 12 12 20.7 7" />
+                  <line x1="12" y1="12" x2="12" y2="21" />
+                </svg>
+              </span>
+              <span className="element-card-name">{entity.name}</span>
+              <span className="element-card-meta">Part {index + 1}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="material-editor">
+        <span className="entity-name">{selectedEntity.name}</span>
+        <MaterialEntity entity={selectedEntity} engine={engine} />
       </div>
     </div>
   )
+}
+
+function rgbToCss(r: number, g: number, b: number): string {
+  return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`
 }
 
 function MaterialEntity({ entity, engine }: { entity: EntityInfo; engine: EngineAPI }) {
@@ -50,8 +99,6 @@ function MaterialEntity({ entity, engine }: { entity: EntityInfo; engine: Engine
 
   return (
     <div className="material-entity">
-      <span className="entity-name">{entity.name}</span>
-
       <label className="slider-label">
         <span>Roughness</span>
         <span className="slider-value">{entity.roughness.toFixed(2)}</span>
