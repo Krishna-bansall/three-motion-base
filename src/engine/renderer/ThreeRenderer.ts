@@ -1,35 +1,20 @@
-/**
- * Step 1: ThreeRenderer
- * 
- * Canvas, camera, scene, HDRI environment loading, and render loop.
- * Steps 2, 5, 6 are integrated via composition.
- */
+/** Low-level Three.js runtime: scene setup, controls, render loop, and HDRI. */
 import * as THREE from 'three'
 import { TransformControls } from 'three/addons/controls/TransformControls.js'
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js'
 import { PostProcessing } from './PostProcessing'
 import { TurntableController } from './TurntableController'
-import { runSyncSystems } from '../ecs/systems'
-import { world } from '../ecs/world'
-
-export type HDRIPreset = 'studio' | 'moody' | 'daylight'
-export type TransformGizmoMode = 'translate' | 'rotate' | 'scale'
-
-/** Bundled HDRI paths (relative to /public) */
-export const HDRI_PATHS: Record<HDRIPreset, string> = {
-  studio: '/hdri/studio.hdr',
-  moody: '/hdri/moody.hdr',
-  daylight: '/hdri/daylight.hdr',
-}
+import { HDRI_PATHS } from '../runtime/environment'
+import type { HDRIPreset, TransformGizmoMode } from '../runtime/types'
 
 export class ThreeRenderer {
   readonly renderer: THREE.WebGLRenderer
   readonly scene: THREE.Scene
   readonly camera: THREE.PerspectiveCamera
   readonly postProcessing: PostProcessing
-  readonly clock = new THREE.Clock()
+  readonly timer = new THREE.Timer()
 
-  /** The root group that the TurntableController rotates */
+  /** Root transform manipulated by both the turntable and transform gizmo. */
   readonly productRoot = new THREE.Group()
   readonly transformControls: TransformControls
   readonly transformControlsHelper: THREE.Object3D
@@ -42,31 +27,30 @@ export class ThreeRenderer {
   private resizeObserver: ResizeObserver | null = null
   private animationFrameId = 0
   private pmremGenerator: THREE.PMREMGenerator
+  private hdrLoader = new HDRLoader()
   private activeHDRI: HDRIPreset = 'studio'
   private transformMode: TransformGizmoMode | null = null
+  private activeEnvironmentMap: THREE.Texture | null = null
+  private hdriLoadToken = 0
 
   constructor() {
-    // ── Renderer ──
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
-      preserveDrawingBuffer: true, // needed for PNG export
+      preserveDrawingBuffer: true,
     })
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.0
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 
-    // ── Scene ──
     this.scene = new THREE.Scene()
     this.scene.add(this.productRoot)
 
-    // ── Camera ──
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100)
     this.camera.position.set(0, 0.5, 3)
     this.camera.lookAt(0, 0, 0)
 
-    // ── Transform Controls ──
     this.transformControls = new TransformControls(this.camera, this.renderer.domElement)
     this.transformControls.attach(this.productRoot)
     this.transformControls.enabled = false
@@ -89,38 +73,25 @@ export class ThreeRenderer {
     })
     this.scene.add(this.transformControlsHelper)
 
-    // ── PMREMGenerator ──
     this.pmremGenerator = new THREE.PMREMGenerator(this.renderer)
     this.pmremGenerator.compileEquirectangularShader()
 
-    // ── Post-processing ──
     this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera)
   }
-
-  // ── Lifecycle ───────────────────────────────────────────────
 
   mount(container: HTMLElement): void {
     this.container = container
     container.appendChild(this.renderer.domElement)
     this.renderer.domElement.style.cursor = 'grab'
 
-    // Turntable controller on the product root
     this.turntable = new TurntableController(this.productRoot, this.renderer.domElement)
     this.syncTurntableState()
-
-    // Initial size
     this.resize()
-
-    // Watch for container resize
     this.resizeObserver = new ResizeObserver(() => this.resize())
     this.resizeObserver.observe(container)
-
-    // Start render loop
-    this.clock.start()
+    this.timer.reset()
     this.loop()
-
-    // Load default HDRI
-    this.loadHDRI('studio')
+    void this.loadHDRI('studio')
   }
 
   unmount(): void {
@@ -129,6 +100,9 @@ export class ThreeRenderer {
     this.turntable?.dispose()
     this.transformControls.detach()
     this.transformControls.dispose()
+    this.disposeEnvironmentMap()
+    this.scene.environment = null
+    this.scene.background = null
     this.renderer.domElement.remove()
     this.renderer.dispose()
     this.postProcessing.dispose()
@@ -148,38 +122,40 @@ export class ThreeRenderer {
     this.postProcessing.setSize(w, h)
   }
 
-  // ── Render Loop ─────────────────────────────────────────────
-
   private loop = (): void => {
     this.animationFrameId = requestAnimationFrame(this.loop)
-    const delta = this.clock.getDelta()
+    this.timer.update()
+    const delta = this.timer.getDelta()
+    const elapsed = this.timer.getElapsed()
 
-    // Sync ECS → Three.js
-    runSyncSystems(world)
-
-    // Update turntable
     this.turntable?.update(delta)
-
-    // Render with post-processing
-    this.postProcessing.render()
+    this.postProcessing.render(elapsed)
   }
-
-  // ── HDRI Loading ────────────────────────────────────────────
 
   async loadHDRI(preset: HDRIPreset): Promise<void> {
     this.activeHDRI = preset
     const path = HDRI_PATHS[preset]
+    const loadToken = ++this.hdriLoadToken
 
     return new Promise<void>((resolve, reject) => {
-      new RGBELoader().load(
+      this.hdrLoader.load(
         path,
         (texture) => {
           const envMap = this.pmremGenerator.fromEquirectangular(texture).texture
+          texture.dispose()
+
+          if (loadToken !== this.hdriLoadToken) {
+            envMap.dispose()
+            resolve()
+            return
+          }
+
+          this.disposeEnvironmentMap()
+          this.activeEnvironmentMap = envMap
           this.scene.environment = envMap
           this.scene.background = envMap
           this.scene.backgroundBlurriness = 0.5
           this.scene.backgroundIntensity = 0.8
-          texture.dispose()
           resolve()
         },
         undefined,
@@ -191,8 +167,6 @@ export class ThreeRenderer {
   getActiveHDRI(): HDRIPreset {
     return this.activeHDRI
   }
-
-  // ── Exposure ────────────────────────────────────────────────
 
   setExposure(value: number): void {
     this.renderer.toneMappingExposure = value
@@ -222,5 +196,10 @@ export class ThreeRenderer {
     if (!this.turntable) return
     this.turntable.enabled = this.transformMode === null
     this.renderer.domElement.style.cursor = this.transformMode === null ? 'grab' : 'default'
+  }
+
+  private disposeEnvironmentMap(): void {
+    this.activeEnvironmentMap?.dispose()
+    this.activeEnvironmentMap = null
   }
 }

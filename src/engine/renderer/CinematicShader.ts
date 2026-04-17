@@ -1,9 +1,4 @@
-/**
- * Step 2: CinematicShader
- * 
- * Custom GLSL shader combining vignette, chromatic aberration,
- * film grain, and color temperature in a single post-processing pass.
- */
+/** Combined post-processing shader for vignette, grain, chromatic shift, and warmth. */
 
 export const CinematicShader = {
   name: 'CinematicShader',
@@ -16,7 +11,8 @@ export const CinematicShader = {
     chromaticStrength: { value: 0.003 },
     grainIntensity: { value: 0.0 },
     grainTime: { value: 0.0 },
-    colorTemperature: { value: 0.0 }, // -1 cool … 0 neutral … +1 warm
+    // -1 cool, 0 neutral, +1 warm.
+    colorTemperature: { value: 0.0 },
   },
 
   vertexShader: /* glsl */ `
@@ -39,7 +35,6 @@ export const CinematicShader = {
 
     varying vec2 vUv;
 
-    // ── Pseudo-random hash ──
     float hash(vec2 p) {
       vec3 p3 = fract(vec3(p.xyx) * 0.1031);
       p3 += dot(p3, p3.yzx + 33.33);
@@ -52,7 +47,6 @@ export const CinematicShader = {
       vec2 dir = uv - center;
       float dist = length(dir);
 
-      // ── Chromatic Aberration ──
       float offset = chromaticStrength * dist;
       vec2 offsetDir = normalize(dir + 0.0001);
 
@@ -62,28 +56,22 @@ export const CinematicShader = {
 
       vec3 color = vec3(r, g, b);
 
-      // ── Color Temperature ──
-      // Warm pushes toward orange, cool pushes toward blue
       if (colorTemperature > 0.0) {
-        // Warm: boost red slightly, reduce blue
         color.r += colorTemperature * 0.06;
         color.g += colorTemperature * 0.02;
         color.b -= colorTemperature * 0.06;
       } else if (colorTemperature < 0.0) {
-        // Cool: boost blue slightly, reduce red
         float cool = -colorTemperature;
         color.r -= cool * 0.06;
         color.g += cool * 0.01;
         color.b += cool * 0.06;
       }
 
-      // ── Film Grain ──
       if (grainIntensity > 0.0) {
         float grain = hash(uv * 1000.0 + grainTime) * 2.0 - 1.0;
         color += grain * grainIntensity;
       }
 
-      // ── Vignette ──
       if (vignetteEnabled > 0.5) {
         float vignette = smoothstep(vignetteOffset, vignetteOffset - vignetteIntensity, dist * 1.4);
         color *= vignette;

@@ -1,135 +1,13 @@
 /**
  * LightingPanel — HDRI selector, exposure, bloom controls, auto-rotate.
  */
-import { useEffect, useRef } from 'react'
-import * as THREE from 'three'
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'
+import { useMemo } from 'react'
 import { useEngineStore } from '../../store/useEngineStore'
 import type { EngineAPI } from '../../engine/EngineAPI'
-import { HDRI_PATHS, type HDRIPreset } from '../../engine/renderer/ThreeRenderer'
+import type { HDRIPreset } from '../../engine/runtime/types'
 
 interface LightingPanelProps {
   engine: EngineAPI
-}
-
-const HDRI_OPTIONS: { key: HDRIPreset; label: string; mood: string; icon: string }[] = [
-  {
-    key: 'studio',
-    label: 'Studio',
-    mood: 'Clean Focus',
-    icon: 'wb_incandescent',
-  },
-  {
-    key: 'moody',
-    label: 'Moody',
-    mood: 'Night Drama',
-    icon: 'dark_mode',
-  },
-  {
-    key: 'daylight',
-    label: 'Daylight',
-    mood: 'Open Air',
-    icon: 'light_mode',
-  },
-]
-
-function renderPreview(canvas: HTMLCanvasElement, path: string): () => void {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-  renderer.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1
-  renderer.outputColorSpace = THREE.SRGBColorSpace
-
-  const scene = new THREE.Scene()
-  const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 20)
-  camera.position.set(0, 0.24, 2.15)
-  camera.lookAt(0, 0, 0)
-
-  const sphere = new THREE.Mesh(
-    new THREE.SphereGeometry(0.54, 40, 40),
-    new THREE.MeshStandardMaterial({ color: 0xe3e6ef, metalness: 0.88, roughness: 0.18 }),
-  )
-  sphere.position.y = -0.12
-  scene.add(sphere)
-
-  const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.8, 0.92, 0.1, 36),
-    new THREE.MeshStandardMaterial({ color: 0x222431, metalness: 0.3, roughness: 0.5 }),
-  )
-  base.position.y = -0.72
-  scene.add(base)
-
-  const pmremGenerator = new THREE.PMREMGenerator(renderer)
-  pmremGenerator.compileEquirectangularShader()
-
-  let envMap: THREE.Texture | null = null
-  let disposed = false
-
-  const renderFrame = (): void => {
-    const width = Math.max(1, Math.floor(canvas.clientWidth || 160))
-    const height = Math.max(1, Math.floor(canvas.clientHeight || 110))
-    renderer.setSize(width, height, false)
-    camera.aspect = width / height
-    camera.updateProjectionMatrix()
-    renderer.render(scene, camera)
-  }
-
-  const resizeObserver = new ResizeObserver(() => {
-    if (!disposed) {
-      renderFrame()
-    }
-  })
-  resizeObserver.observe(canvas)
-
-  new RGBELoader().load(
-    path,
-    (texture) => {
-      if (disposed) {
-        texture.dispose()
-        return
-      }
-      envMap = pmremGenerator.fromEquirectangular(texture).texture
-      scene.environment = envMap
-      scene.background = envMap
-      scene.backgroundBlurriness = 0.9
-      scene.backgroundIntensity = 1.05
-      texture.dispose()
-      renderFrame()
-    },
-    undefined,
-    () => {
-      if (!disposed) {
-        renderFrame()
-      }
-    },
-  )
-
-  renderFrame()
-
-  return () => {
-    disposed = true
-    resizeObserver.disconnect()
-    scene.environment = null
-    scene.background = null
-    envMap?.dispose()
-    pmremGenerator.dispose()
-    sphere.geometry.dispose()
-    ;(sphere.material as THREE.Material).dispose()
-    base.geometry.dispose()
-    ;(base.material as THREE.Material).dispose()
-    renderer.dispose()
-  }
-}
-
-function HDRIPreview({ path }: { path: string }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-
-  useEffect(() => {
-    if (!canvasRef.current) return
-    return renderPreview(canvasRef.current, path)
-  }, [path])
-
-  return <canvas ref={canvasRef} className="hdri-card-canvas" aria-hidden />
 }
 
 function setParallaxVars(element: HTMLButtonElement, clientX: number, clientY: number): void {
@@ -154,6 +32,16 @@ export function LightingPanel({ engine }: LightingPanelProps) {
   const exposure = useEngineStore((s) => s.exposure)
   const autoRotate = useEngineStore((s) => s.autoRotate)
   const autoRotateSpeed = useEngineStore((s) => s.autoRotateSpeed)
+  const hdriOptions = useMemo(
+    () => engine.getEnvironmentPreviews().map((preview) => ({
+      key: preview.preset as HDRIPreset,
+      label: preview.label,
+      mood: preview.mood,
+      icon: preview.icon,
+      imageUrl: preview.imageUrl,
+    })),
+    [engine],
+  )
   const rangeHistoryProps = {
     onPointerDown: () => engine.beginHistoryBatch(),
     onPointerUp: () => engine.endHistoryBatch(),
@@ -168,7 +56,7 @@ export function LightingPanel({ engine }: LightingPanelProps) {
       {/* HDRI Selector */}
       <label className="slider-label"><span>Environment</span></label>
       <div className="hdri-selector">
-        {HDRI_OPTIONS.map(({ key, label, mood, icon }) => (
+        {hdriOptions.map(({ key, label, mood, icon, imageUrl }) => (
           <button
             key={key}
             className={`hdri-card hdri-card-${key} ${activeHDRI === key ? 'active' : ''}`}
@@ -177,7 +65,7 @@ export function LightingPanel({ engine }: LightingPanelProps) {
             onMouseLeave={(e) => resetParallaxVars(e.currentTarget)}
             onBlur={(e) => resetParallaxVars(e.currentTarget)}
           >
-            <HDRIPreview path={HDRI_PATHS[key]} />
+            <img src={imageUrl} className="hdri-card-canvas" alt="" aria-hidden />
             <span className="hdri-card-fade" aria-hidden />
             <span className="material-symbols-rounded hdri-card-icon" aria-hidden>{icon}</span>
             <span className="hdri-card-label">{label}</span>

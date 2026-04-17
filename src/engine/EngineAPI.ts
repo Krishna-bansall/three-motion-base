@@ -1,90 +1,36 @@
 /**
- * Step 7: Engine API
+ * Engine API
  *
- * The ONLY public surface that React calls.
- * Orchestrates renderer, ECS, asset loading, and store updates.
+ * Public surface React uses to load models, mutate canonical scene data,
+ * and control the runtime adapter.
  */
-import { addComponent } from 'bitecs'
-import { ThreeRenderer, type HDRIPreset, type TransformGizmoMode } from './renderer/ThreeRenderer'
-import type { BloomSettings, CinematicSettings } from './renderer/PostProcessing'
-import { loadGLTFFromURL, loadGLTFFromFile, loadGLTFFromFiles, type LoadedModel } from './assets/loadGLTF'
-import { exportPNG } from './renderer/exportPNG'
-import { world } from './ecs/world'
+import { loadGLTFFromFile, loadGLTFFromFiles, loadGLTFFromURL, type LoadedModel } from './assets/loadGLTF'
+import { patchMaterial, setNodeTRS } from './scene/mutations'
+import { cloneSceneDoc, createEmptySceneDoc } from './scene/snapshot'
+import { diffSceneDocs, isSceneDeltaEmpty } from './scene/diff'
+import type { NodeId, Quat, SceneDoc } from './scene/types'
+import type {
+  EnvironmentPreview,
+  HDRIPreset,
+  TransformGizmoMode,
+  TRS,
+} from './runtime/types'
+import type { RuntimeAdapter } from './runtime/RuntimeAdapter'
+import { ThreeAdapter } from './runtime/three/ThreeAdapter'
+import { convertCanonicalToBackendSchema } from './runtime/conversion/canonicalToBackend'
+import { EngineHistory, type EngineSnapshot } from './history/EngineHistory'
 import {
-  Transform,
-  Material,
-  DirtyTransform,
-  DirtyMaterial,
-  eidToObject3D,
-  eidToMaterial,
-} from './ecs/components'
-import { useEngineStore, type EntityInfo } from '../store/useEngineStore'
-
-interface TransformSnapshot {
-  px: number
-  py: number
-  pz: number
-  rx: number
-  ry: number
-  rz: number
-  sx: number
-  sy: number
-  sz: number
-}
-
-interface MaterialSnapshot {
-  eid: number
-  roughness: number
-  metalness: number
-  envMapIntensity: number
-  r: number
-  g: number
-  b: number
-}
-
-interface EngineSnapshot {
-  rootTransform: TransformSnapshot | null
-  materials: MaterialSnapshot[]
-  activeHDRI: HDRIPreset
-  exposure: number
-  bloom: BloomSettings
-  cinematic: CinematicSettings
-  autoRotate: boolean
-  autoRotateSpeed: number
-}
-
-export interface ECSStateGraph {
-  history: {
-    canUndo: boolean
-    canRedo: boolean
-    undoDepth: number
-    redoDepth: number
-    currentIndex: number
-    totalStates: number
-  }
-  scene: {
-    hasModel: boolean
-    isLoading: boolean
-    activeHDRI: HDRIPreset
-    exposure: number
-    bloom: BloomSettings
-    cinematic: CinematicSettings
-    autoRotate: boolean
-    autoRotateSpeed: number
-    transformMode: TransformGizmoMode | null
-  }
-  root: {
-    eid: number
-    name: string
-    transform: TransformSnapshot
-  } | null
-  meshes: Array<{
-    eid: number
-    name: string
-    transform: TransformSnapshot
-    material: Omit<MaterialSnapshot, 'eid'>
-  }>
-}
+  buildConsoleState,
+  buildRuntimeStateGraph,
+  buildSceneSnapshot,
+  publishEntities,
+  publishHasModel,
+  publishHistoryAvailability,
+  publishLoading,
+  publishViewSettings,
+  readViewSettingsFromStore,
+  type RuntimeStateGraph,
+} from './store/engineStateBridge'
 
 export interface ThreeMotionConsoleAPI {
   help: () => string[]
@@ -92,9 +38,11 @@ export interface ThreeMotionConsoleAPI {
   redo: () => Promise<boolean>
   state: () => object
   scene: () => object
-  ecs: () => ECSStateGraph
+  canonical: () => SceneDoc | null
+  ecs: () => RuntimeStateGraph
   printState: () => object
-  printEcsGraph: () => ECSStateGraph
+  printCanonical: () => SceneDoc | null
+  printEcsGraph: () => RuntimeStateGraph
   setTransformMode: (mode: TransformGizmoMode | null) => void
 }
 
@@ -103,158 +51,143 @@ declare global {
     threeMotion?: ThreeMotionConsoleAPI
   }
 }
-
-const HISTORY_LIMIT = 100
-
 export class EngineAPI {
-  private threeRenderer: ThreeRenderer | null = null
-  private currentModel: LoadedModel | null = null
-  private history: EngineSnapshot[] = []
-  private historyIndex = -1
-  private pendingTransformSnapshot: EngineSnapshot | null = null
-  private isApplyingHistory = false
-  private historyBatchDepth = 0
-  private historyBatchStart: EngineSnapshot | null = null
+  private readonly runtime: RuntimeAdapter
+  private currentScene: SceneDoc | null = null
+  private currentAssets: LoadedModel['runtimeAssets'] | null = null
+  private readonly history = new EngineHistory()
 
-  // ── Lifecycle ───────────────────────────────────────────
+  constructor(runtime: RuntimeAdapter = new ThreeAdapter()) {
+    this.runtime = runtime
+  }
 
   init(container: HTMLElement): void {
-    this.threeRenderer = new ThreeRenderer()
-    this.threeRenderer.mount(container)
-    this.threeRenderer.onProductTransformChange = () => this.syncProductRootTransform()
-    this.threeRenderer.onTransformInteractionStart = () => this.beginTransformHistory()
-    this.threeRenderer.onTransformInteractionEnd = () => this.commitTransformHistory()
+    this.runtime.mount(container)
+    this.runtime.onRuntimeTransformChanged((nodeId, trs) => this.syncRuntimeTransform(nodeId, trs))
+    this.runtime.onTransformInteractionStart(() => this.beginTransformHistory())
+    this.runtime.onTransformInteractionEnd(() => this.commitTransformHistory())
+    void this.runtime.setViewSettings(readViewSettingsFromStore())
     this.publishHistoryState()
   }
 
   dispose(): void {
-    if (this.threeRenderer) {
-      this.threeRenderer.onProductTransformChange = null
-      this.threeRenderer.onTransformInteractionStart = null
-      this.threeRenderer.onTransformInteractionEnd = null
-    }
-    this.threeRenderer?.unmount()
-    this.threeRenderer = null
+    this.runtime.onRuntimeTransformChanged(null)
+    this.runtime.onTransformInteractionStart(null)
+    this.runtime.onTransformInteractionEnd(null)
+    this.runtime.unmount()
   }
 
-  // ── Model Loading ───────────────────────────────────────
-
   async loadModel(url: string): Promise<void> {
-    if (!this.threeRenderer) return
-    const store = useEngineStore.getState()
-
-    store.setLoading(true)
-
-    try {
-      this.clearModel()
-
-      const model = await loadGLTFFromURL(url)
-      this.currentModel = model
-      this.threeRenderer.productRoot.add(model.group)
-
-      store.setHasModel(true)
-      this.syncEntitiesToStore()
-      this.initializeHistory()
-    } finally {
-      store.setLoading(false)
-    }
+    await this.loadLoadedModel(() => loadGLTFFromURL(url))
   }
 
   async loadModelFromFile(file: File): Promise<void> {
-    if (!this.threeRenderer) return
-    const store = useEngineStore.getState()
-
-    store.setLoading(true)
-
-    try {
-      this.clearModel()
-
-      const model = await loadGLTFFromFile(file)
-      this.currentModel = model
-      this.threeRenderer.productRoot.add(model.group)
-
-      store.setHasModel(true)
-      this.syncEntitiesToStore()
-      this.initializeHistory()
-    } finally {
-      store.setLoading(false)
-    }
+    await this.loadLoadedModel(() => loadGLTFFromFile(file))
   }
 
   async loadModelFromFiles(files: File[]): Promise<void> {
-    if (!this.threeRenderer) return
-    const store = useEngineStore.getState()
-
-    store.setLoading(true)
-
-    try {
-      this.clearModel()
-
-      const model = await loadGLTFFromFiles(files)
-      this.currentModel = model
-      this.threeRenderer.productRoot.add(model.group)
-
-      store.setHasModel(true)
-      this.syncEntitiesToStore()
-      this.initializeHistory()
-    } finally {
-      store.setLoading(false)
-    }
+    await this.loadLoadedModel(() => loadGLTFFromFiles(files))
   }
 
-  private clearModel(): void {
-    if (this.currentModel && this.threeRenderer) {
-      this.threeRenderer.productRoot.remove(this.currentModel.group)
+  async setHDRI(preset: HDRIPreset): Promise<void> {
+    const next = readViewSettingsFromStore()
+    if (next.activeHDRI === preset) return
 
-      eidToObject3D.delete(this.currentModel.rootEid)
-      for (const eid of this.currentModel.meshEids) {
-        eidToObject3D.delete(eid)
-        eidToMaterial.delete(eid)
-      }
-    }
-
-    this.currentModel = null
-    this.pendingTransformSnapshot = null
-    this.historyBatchDepth = 0
-    this.historyBatchStart = null
-
-    const store = useEngineStore.getState()
-    store.setHasModel(false)
-    store.setEntities([])
-    this.resetHistory()
+    next.activeHDRI = preset
+    await this.runtime.setViewSettings(next)
+    publishViewSettings(next)
+    this.commitCurrentSnapshot()
   }
 
-  // ── Transform ───────────────────────────────────────────
+  setExposure(value: number): void {
+    this.updateViewSettings((next) => {
+      next.exposure = value
+    })
+  }
+
+  setBloom(strength: number, radius: number, threshold: number): void {
+    this.updateViewSettings((next) => {
+      next.bloom = { strength, radius, threshold }
+    })
+  }
+
+  setAutoRotate(enabled: boolean): void {
+    this.updateViewSettings((next) => {
+      next.autoRotate = enabled
+    })
+  }
+
+  setAutoRotateSpeed(speed: number): void {
+    this.updateViewSettings((next) => {
+      next.autoRotateSpeed = speed
+    })
+  }
+
+  setVignette(intensity: number): void {
+    this.updateViewSettings((next) => {
+      next.cinematic.vignette = intensity
+    })
+  }
+
+  setVignetteEnabled(enabled: boolean): void {
+    this.updateViewSettings((next) => {
+      next.cinematic.vignetteEnabled = enabled
+    })
+  }
+
+  setChromaticAberration(strength: number): void {
+    this.updateViewSettings((next) => {
+      next.cinematic.chromaticAberration = strength
+    })
+  }
+
+  setFilmGrain(intensity: number): void {
+    this.updateViewSettings((next) => {
+      next.cinematic.filmGrain = intensity
+    })
+  }
+
+  setColorTemperature(temperature: number): void {
+    this.updateViewSettings((next) => {
+      next.cinematic.colorTemperature = temperature
+    })
+  }
 
   setTransform(
-    eid: number,
+    nodeId: NodeId,
     t: Partial<{
       px: number; py: number; pz: number
       rx: number; ry: number; rz: number
       sx: number; sy: number; sz: number
     }>,
   ): void {
-    if (!this.hasTransformChange(eid, t)) return
+    this.applySceneMutation((scene) => {
+      const node = scene.nodes[nodeId]
+      if (!node) return
 
-    if (t.px !== undefined) Transform.px[eid] = t.px
-    if (t.py !== undefined) Transform.py[eid] = t.py
-    if (t.pz !== undefined) Transform.pz[eid] = t.pz
-    if (t.rx !== undefined) Transform.rx[eid] = t.rx
-    if (t.ry !== undefined) Transform.ry[eid] = t.ry
-    if (t.rz !== undefined) Transform.rz[eid] = t.rz
-    if (t.sx !== undefined) Transform.sx[eid] = t.sx
-    if (t.sy !== undefined) Transform.sy[eid] = t.sy
-    if (t.sz !== undefined) Transform.sz[eid] = t.sz
+      const hasRotationUpdate = t.rx !== undefined || t.ry !== undefined || t.rz !== undefined
+      const nextRotation = hasRotationUpdate
+        ? (() => {
+            const [rx, ry, rz] = quaternionToEulerXYZ(node.r)
+            const nextEuler: [number, number, number] = [
+              t.rx ?? rx,
+              t.ry ?? ry,
+              t.rz ?? rz,
+            ]
+            return eulerToQuaternionTuple(...nextEuler)
+          })()
+        : [...node.r] as Quat
 
-    addComponent(world, eid, DirtyTransform)
-    this.syncEntitiesToStore()
-    this.commitCurrentSnapshot()
+      setNodeTRS(scene, nodeId, {
+        t: [t.px ?? node.t[0], t.py ?? node.t[1], t.pz ?? node.t[2]],
+        r: nextRotation,
+        s: [t.sx ?? node.s[0], t.sy ?? node.s[1], t.sz ?? node.s[2]],
+      })
+    })
   }
 
-  // ── Material ────────────────────────────────────────────
-
   setMaterial(
-    eid: number,
+    nodeId: NodeId,
     m: Partial<{
       roughness: number
       metalness: number
@@ -264,107 +197,36 @@ export class EngineAPI {
       b: number
     }>,
   ): void {
-    if (!this.hasMaterialChange(eid, m)) return
+    this.applySceneMutation((scene) => {
+      const materialId = scene.nodes[nodeId]?.materialId
+      if (!materialId) return
 
-    if (m.roughness !== undefined) Material.roughness[eid] = m.roughness
-    if (m.metalness !== undefined) Material.metalness[eid] = m.metalness
-    if (m.envMapIntensity !== undefined) Material.envMapIntensity[eid] = m.envMapIntensity
-    if (m.r !== undefined) Material.r[eid] = m.r
-    if (m.g !== undefined) Material.g[eid] = m.g
-    if (m.b !== undefined) Material.b[eid] = m.b
+      const material = scene.materials[materialId]
+      if (!material) return
 
-    addComponent(world, eid, DirtyMaterial)
-    this.syncEntitiesToStore()
-    this.commitCurrentSnapshot()
-  }
-
-  // ── HDRI ────────────────────────────────────────────────
-
-  async setHDRI(preset: HDRIPreset): Promise<void> {
-    if (!this.threeRenderer || this.threeRenderer.getActiveHDRI() === preset) return
-
-    await this.threeRenderer.loadHDRI(preset)
-    useEngineStore.getState().setActiveHDRI(preset)
-    this.commitCurrentSnapshot()
-  }
-
-  // ── Exposure ────────────────────────────────────────────
-
-  setExposure(value: number): void {
-    const currentExposure = this.threeRenderer?.getExposure() ?? useEngineStore.getState().exposure
-    if (currentExposure === value) return
-
-    this.threeRenderer?.setExposure(value)
-    useEngineStore.getState().setExposure(value)
-    this.commitCurrentSnapshot()
-  }
-
-  // ── Bloom ───────────────────────────────────────────────
-
-  setBloom(strength: number, radius: number, threshold: number): void {
-    const bloom = useEngineStore.getState().bloom
-    if (
-      bloom.strength === strength
-      && bloom.radius === radius
-      && bloom.threshold === threshold
-    ) {
-      return
-    }
-
-    this.threeRenderer?.postProcessing.setBloom(strength, radius, threshold)
-    useEngineStore.getState().setBloom({ strength, radius, threshold })
-    this.commitCurrentSnapshot()
-  }
-
-  // ── Auto-rotate ─────────────────────────────────────────
-
-  setAutoRotate(enabled: boolean): void {
-    if (useEngineStore.getState().autoRotate === enabled) return
-
-    if (this.threeRenderer?.turntable) {
-      this.threeRenderer.turntable.autoRotate = enabled
-    }
-    useEngineStore.getState().setAutoRotate(enabled)
-    this.commitCurrentSnapshot()
-  }
-
-  setAutoRotateSpeed(speed: number): void {
-    if (useEngineStore.getState().autoRotateSpeed === speed) return
-
-    if (this.threeRenderer?.turntable) {
-      this.threeRenderer.turntable.autoRotateSpeed = speed
-    }
-    useEngineStore.getState().setAutoRotateSpeed(speed)
-    this.commitCurrentSnapshot()
+      patchMaterial(scene, materialId, {
+        baseColor: [
+          m.r ?? material.baseColor[0],
+          m.g ?? material.baseColor[1],
+          m.b ?? material.baseColor[2],
+        ],
+        roughness: m.roughness ?? material.roughness,
+        metalness: m.metalness ?? material.metalness,
+        envMapIntensity: m.envMapIntensity ?? material.envMapIntensity,
+      })
+    })
   }
 
   beginHistoryBatch(): void {
-    if (this.isApplyingHistory) return
-
-    if (this.historyBatchDepth === 0) {
-      this.historyBatchStart = this.captureSnapshot()
-    }
-
-    this.historyBatchDepth += 1
+    this.history.beginBatch(() => this.captureSnapshot())
   }
 
   endHistoryBatch(): void {
-    if (this.isApplyingHistory || this.historyBatchDepth === 0) return
-
-    this.historyBatchDepth -= 1
-
-    if (this.historyBatchDepth > 0) return
-
-    const before = this.historyBatchStart
-    const after = this.captureSnapshot()
-    this.historyBatchStart = null
-
-    if (!before || !after || this.areSnapshotsEqual(before, after)) {
-      this.publishHistoryState()
-      return
-    }
-
-    this.pushHistorySnapshot(after)
+    this.history.endBatch(
+      () => this.captureSnapshot(),
+      (left, right) => this.areSnapshotsEqual(left, right),
+    )
+    this.publishHistoryState()
   }
 
   runHistoryBatch(action: () => void): void {
@@ -377,122 +239,70 @@ export class EngineAPI {
   }
 
   async undo(): Promise<boolean> {
-    if (!this.canUndo()) {
-      this.publishHistoryState()
-      return false
-    }
-
-    const targetIndex = this.historyIndex - 1
-    const snapshot = this.history[targetIndex]
+    const snapshot = this.history.getUndoSnapshot()
     if (!snapshot) {
       this.publishHistoryState()
       return false
     }
 
     await this.applySnapshot(snapshot)
-    this.historyIndex = targetIndex
+    this.history.markUndoApplied()
     this.publishHistoryState()
     return true
   }
 
   async redo(): Promise<boolean> {
-    if (!this.canRedo()) {
-      this.publishHistoryState()
-      return false
-    }
-
-    const targetIndex = this.historyIndex + 1
-    const snapshot = this.history[targetIndex]
+    const snapshot = this.history.getRedoSnapshot()
     if (!snapshot) {
       this.publishHistoryState()
       return false
     }
 
     await this.applySnapshot(snapshot)
-    this.historyIndex = targetIndex
+    this.history.markRedoApplied()
     this.publishHistoryState()
     return true
   }
 
   setTransformGizmoMode(mode: TransformGizmoMode | null): void {
-    this.threeRenderer?.setTransformMode(mode)
+    this.runtime.setTransformToolMode(mode)
   }
 
   getTransformGizmoMode(): TransformGizmoMode | null {
-    return this.threeRenderer?.getTransformMode() ?? null
+    return this.runtime.getTransformToolMode()
   }
-
-  // ── Cinematic / Filters ─────────────────────────────────
-
-  setVignette(intensity: number): void {
-    if (useEngineStore.getState().cinematic.vignette === intensity) return
-
-    this.threeRenderer?.postProcessing.setVignette(intensity, 0.9)
-    this.syncCinematicToStore()
-    this.commitCurrentSnapshot()
-  }
-
-  setVignetteEnabled(enabled: boolean): void {
-    if (useEngineStore.getState().cinematic.vignetteEnabled === enabled) return
-
-    this.threeRenderer?.postProcessing.setVignetteEnabled(enabled)
-    this.syncCinematicToStore()
-    this.commitCurrentSnapshot()
-  }
-
-  setChromaticAberration(strength: number): void {
-    if (useEngineStore.getState().cinematic.chromaticAberration === strength) return
-
-    this.threeRenderer?.postProcessing.setChromaticAberration(strength)
-    this.syncCinematicToStore()
-    this.commitCurrentSnapshot()
-  }
-
-  setFilmGrain(intensity: number): void {
-    if (useEngineStore.getState().cinematic.filmGrain === intensity) return
-
-    this.threeRenderer?.postProcessing.setFilmGrain(intensity)
-    this.syncCinematicToStore()
-    this.commitCurrentSnapshot()
-  }
-
-  setColorTemperature(temperature: number): void {
-    if (useEngineStore.getState().cinematic.colorTemperature === temperature) return
-
-    this.threeRenderer?.postProcessing.setColorTemperature(temperature)
-    this.syncCinematicToStore()
-    this.commitCurrentSnapshot()
-  }
-
-  private syncCinematicToStore(): void {
-    if (!this.threeRenderer) return
-    const cinematic = this.threeRenderer.postProcessing.getCinematic()
-    useEngineStore.getState().setCinematic(cinematic)
-  }
-
-  // ── Export ──────────────────────────────────────────────
 
   async exportPNG(scale: number = 3): Promise<Blob> {
-    if (!this.threeRenderer) throw new Error('Engine not initialized')
-    return exportPNG(this.threeRenderer.renderer, this.threeRenderer.postProcessing, scale)
+    return this.runtime.exportPNG(scale)
   }
 
-  // ── Scene snapshot / Console API ────────────────────────
+  getEnvironmentPreviews(): EnvironmentPreview[] {
+    return this.runtime.getEnvironmentPreviews()
+  }
 
   getSceneSnapshot(): object {
-    const state = useEngineStore.getState()
-    return {
-      entities: state.entities,
-      activeHDRI: state.activeHDRI,
-      exposure: state.exposure,
-      bloom: state.bloom,
-      cinematic: state.cinematic,
-      autoRotate: state.autoRotate,
-      autoRotateSpeed: state.autoRotateSpeed,
-      canUndo: state.canUndo,
-      canRedo: state.canRedo,
+    return buildSceneSnapshot(Boolean(this.currentScene), this.getTransformGizmoMode())
+  }
+
+  getCanonicalSceneSnapshot(): SceneDoc | null {
+    return this.currentScene ? cloneSceneDoc(this.currentScene) : null
+  }
+
+  getRuntimeStateGraph(): RuntimeStateGraph {
+    const runtimeGraph = this.currentScene
+      ? this.runtime.getRuntimeDebugGraph(this.currentScene)
+      : { root: null, meshes: [] }
+
+    return buildRuntimeStateGraph({
+      canUndo: this.canUndo(),
+      canRedo: this.canRedo(),
+      undoDepth: this.getUndoDepth(),
+      redoDepth: this.getRedoDepth(),
+      currentIndex: this.history.currentIndex,
+      totalStates: this.history.totalStates,
       transformMode: this.getTransformGizmoMode(),
-    }
+      runtimeGraph,
+    })
   }
 
   getConsoleAPI(): ThreeMotionConsoleAPI {
@@ -502,8 +312,10 @@ export class EngineAPI {
         'window.threeMotion.redo()',
         'window.threeMotion.state()',
         'window.threeMotion.scene()',
+        'window.threeMotion.canonical()',
         'window.threeMotion.ecs()',
         'window.threeMotion.printState()',
+        'window.threeMotion.printCanonical()',
         'window.threeMotion.printEcsGraph()',
         "window.threeMotion.setTransformMode('translate' | 'rotate' | 'scale' | null)",
       ],
@@ -511,14 +323,20 @@ export class EngineAPI {
       redo: () => this.redo(),
       state: () => this.getConsoleState(),
       scene: () => this.getSceneSnapshot(),
-      ecs: () => this.getEcsStateGraph(),
+      canonical: () => this.getCanonicalSceneSnapshot(),
+      ecs: () => this.getRuntimeStateGraph(),
       printState: () => {
         const state = this.getConsoleState()
         console.dir(state, { depth: null })
         return state
       },
+      printCanonical: () => {
+        const scene = this.getCanonicalSceneSnapshot()
+        console.dir(scene, { depth: null })
+        return scene
+      },
       printEcsGraph: () => {
-        const graph = this.getEcsStateGraph()
+        const graph = this.getRuntimeStateGraph()
         console.dir(graph, { depth: null })
         return graph
       },
@@ -526,372 +344,230 @@ export class EngineAPI {
     }
   }
 
-  getEcsStateGraph(): ECSStateGraph {
-    const state = useEngineStore.getState()
-    const root = this.currentModel
-      ? {
-          eid: this.currentModel.rootEid,
-          name: 'ProductRoot',
-          transform: this.captureTransform(this.currentModel.rootEid),
-        }
-      : null
+  getPathTracingReadinessReport() {
+    const scene = this.currentScene
+    if (!scene) {
+      return {
+        nodes: [],
+        warnings: ['No scene loaded'],
+      }
+    }
 
-    const meshes = this.currentModel
-      ? this.currentModel.meshEids.map((eid, index) => {
-          const obj = eidToObject3D.get(eid)
-          const material = this.captureMaterial(eid)
-          return {
-            eid,
-            name: obj?.name || `Mesh ${index + 1}`,
-            transform: this.captureTransform(eid),
-            material: {
-              roughness: material.roughness,
-              metalness: material.metalness,
-              envMapIntensity: material.envMapIntensity,
-              r: material.r,
-              g: material.g,
-              b: material.b,
-            },
-          }
-        })
-      : []
+    const backendScene = convertCanonicalToBackendSchema(scene)
+    const nodes = backendScene.nodes
+      .filter((node) => node.meshId)
+      .map((node) => ({
+        nodeId: node.id,
+        meshId: node.meshId!,
+        materialId: node.materialId ?? null,
+        source: backendScene.meshes.find((mesh) => mesh.id === node.meshId) ?? null,
+      }))
 
-    return {
-      history: {
-        canUndo: this.canUndo(),
-        canRedo: this.canRedo(),
-        undoDepth: this.getUndoDepth(),
-        redoDepth: this.getRedoDepth(),
-        currentIndex: this.historyIndex,
-        totalStates: this.history.length,
-      },
-      scene: {
-        hasModel: state.hasModel,
-        isLoading: state.isLoading,
-        activeHDRI: state.activeHDRI,
-        exposure: state.exposure,
-        bloom: { ...state.bloom },
-        cinematic: { ...state.cinematic },
-        autoRotate: state.autoRotate,
-        autoRotateSpeed: state.autoRotateSpeed,
-        transformMode: this.getTransformGizmoMode(),
-      },
-      root,
-      meshes,
+    const warnings = backendScene.unsupported.map(
+      (warning) => `${warning.id}: ${warning.reason}`,
+    )
+
+    return { nodes, warnings }
+  }
+
+  private async loadLoadedModel(loader: () => Promise<LoadedModel>): Promise<void> {
+    publishLoading(true)
+
+    try {
+      await this.clearModel()
+
+      const model = await loader()
+      this.currentScene = cloneSceneDoc(model.canonicalScene)
+      this.currentAssets = model.runtimeAssets
+      this.runtime.setSceneAssets(model.runtimeAssets)
+      await this.runtime.buildFromCanonical(this.currentScene)
+      await this.runtime.setViewSettings(readViewSettingsFromStore())
+
+      publishHasModel(true)
+      publishEntities(this.currentScene)
+      this.initializeHistory()
+    } finally {
+      publishLoading(false)
     }
   }
 
-  // ── Internal ────────────────────────────────────────────
+  private async clearModel(): Promise<void> {
+    this.currentScene = null
+    this.currentAssets = null
+    this.runtime.setSceneAssets(null)
+    await this.runtime.buildFromCanonical(createEmptySceneDoc())
+    publishHasModel(false)
+    publishEntities(null)
+    this.resetHistory()
+  }
 
-  private syncEntitiesToStore(): void {
-    if (!this.currentModel) {
-      useEngineStore.getState().setEntities([])
+  private applySceneMutation(mutator: (scene: SceneDoc) => void): void {
+    if (!this.currentScene) return
+
+    const previous = cloneSceneDoc(this.currentScene)
+    mutator(this.currentScene)
+    const delta = diffSceneDocs(previous, this.currentScene)
+
+    if (isSceneDeltaEmpty(delta)) {
       return
     }
 
-    const entities: EntityInfo[] = this.currentModel.meshEids.map((eid, i) => {
-      const obj = eidToObject3D.get(eid)
-      return {
-        eid,
-        name: obj?.name || `Mesh ${i + 1}`,
-        roughness: Material.roughness[eid],
-        metalness: Material.metalness[eid],
-        envMapIntensity: Material.envMapIntensity[eid],
-        r: Material.r[eid],
-        g: Material.g[eid],
-        b: Material.b[eid],
-      }
-    })
-
-    useEngineStore.getState().setEntities(entities)
+    void this.runtime.applyDirty(delta, this.currentScene)
+    publishEntities(this.currentScene)
+    this.commitCurrentSnapshot()
   }
 
-  private syncProductRootTransform(): void {
-    if (!this.currentModel || !this.threeRenderer) return
+  private updateViewSettings(mutator: (next: EngineSnapshot['viewSettings']) => void): void {
+    const next = readViewSettingsFromStore()
+    const before = JSON.stringify(next)
+    mutator(next)
 
-    const eid = this.currentModel.rootEid
-    const { position, rotation, scale } = this.threeRenderer.productRoot
+    if (before === JSON.stringify(next)) return
 
-    Transform.px[eid] = position.x
-    Transform.py[eid] = position.y
-    Transform.pz[eid] = position.z
-    Transform.rx[eid] = rotation.x
-    Transform.ry[eid] = rotation.y
-    Transform.rz[eid] = rotation.z
-    Transform.sx[eid] = scale.x
-    Transform.sy[eid] = scale.y
-    Transform.sz[eid] = scale.z
+    publishViewSettings(next)
+    void this.runtime.setViewSettings(next)
+    this.commitCurrentSnapshot()
+  }
+
+  private syncRuntimeTransform(nodeId: NodeId, trs: TRS): void {
+    if (!this.currentScene) return
+
+    const node = this.currentScene.nodes[nodeId]
+    if (!node) return
+
+    setNodeTRS(this.currentScene, nodeId, {
+      t: trs.t,
+      r: trs.r,
+      s: trs.s,
+    })
   }
 
   private beginTransformHistory(): void {
-    if (this.isApplyingHistory || !this.currentModel) return
-    this.pendingTransformSnapshot = this.captureSnapshot()
+    if (!this.currentScene) return
+    this.history.beginTransform(() => this.captureSnapshot())
   }
 
   private commitTransformHistory(): void {
-    if (this.isApplyingHistory || !this.pendingTransformSnapshot) return
-
-    const before = this.pendingTransformSnapshot
-    const after = this.captureSnapshot()
-    this.pendingTransformSnapshot = null
-
-    if (!after || this.areSnapshotsEqual(before, after)) return
-
-    this.pushHistorySnapshot(after)
+    this.history.endTransform(
+      () => this.captureSnapshot(),
+      (left, right) => this.areSnapshotsEqual(left, right),
+    )
+    this.publishHistoryState()
   }
 
   private initializeHistory(): void {
-    const snapshot = this.captureSnapshot()
-    if (!snapshot) {
-      this.resetHistory()
-      return
-    }
-
-    this.history = [snapshot]
-    this.historyIndex = 0
-    this.pendingTransformSnapshot = null
-    this.historyBatchDepth = 0
-    this.historyBatchStart = null
+    this.history.initialize(this.captureSnapshot())
     this.publishHistoryState()
   }
 
   private commitCurrentSnapshot(): void {
-    if (this.isApplyingHistory) return
-    if (this.historyBatchDepth > 0) return
-
-    const snapshot = this.captureSnapshot()
-    if (!snapshot) return
-
-    this.pushHistorySnapshot(snapshot)
-  }
-
-  private pushHistorySnapshot(snapshot: EngineSnapshot): void {
-    const current = this.getCurrentHistorySnapshot()
-    if (current && this.areSnapshotsEqual(current, snapshot)) return
-
-    let nextHistory = this.history.slice(0, this.historyIndex + 1)
-    nextHistory.push(snapshot)
-
-    if (nextHistory.length > HISTORY_LIMIT) {
-      nextHistory = nextHistory.slice(nextHistory.length - HISTORY_LIMIT)
-    }
-
-    this.history = nextHistory
-    this.historyIndex = this.history.length - 1
+    this.history.commitCurrentSnapshot(
+      () => this.captureSnapshot(),
+      (left, right) => this.areSnapshotsEqual(left, right),
+    )
     this.publishHistoryState()
   }
 
   private resetHistory(): void {
-    this.history = []
-    this.historyIndex = -1
-    this.pendingTransformSnapshot = null
-    this.historyBatchDepth = 0
-    this.historyBatchStart = null
+    this.history.reset()
     this.publishHistoryState()
   }
 
   private publishHistoryState(): void {
-    useEngineStore.getState().setHistoryAvailability({
-      canUndo: this.canUndo(),
-      canRedo: this.canRedo(),
-    })
+    publishHistoryAvailability(this.canUndo(), this.canRedo())
   }
 
   private captureSnapshot(): EngineSnapshot | null {
-    if (!this.threeRenderer) return null
-
-    const state = useEngineStore.getState()
     return {
-      rootTransform: this.currentModel ? this.captureTransform(this.currentModel.rootEid) : null,
-      materials: this.currentModel
-        ? this.currentModel.meshEids.map((eid) => this.captureMaterial(eid))
-        : [],
-      activeHDRI: state.activeHDRI,
-      exposure: state.exposure,
-      bloom: { ...state.bloom },
-      cinematic: { ...state.cinematic },
-      autoRotate: state.autoRotate,
-      autoRotateSpeed: state.autoRotateSpeed,
+      scene: this.currentScene ? cloneSceneDoc(this.currentScene) : null,
+      viewSettings: readViewSettingsFromStore(),
     }
   }
 
   private async applySnapshot(snapshot: EngineSnapshot): Promise<void> {
-    const store = useEngineStore.getState()
-
-    this.isApplyingHistory = true
+    this.history.beginApplyingHistory()
     try {
-      if (this.currentModel && snapshot.rootTransform) {
-        this.applyTransformSnapshot(this.currentModel.rootEid, snapshot.rootTransform)
-      }
-
-      for (const material of snapshot.materials) {
-        this.applyMaterialSnapshot(material.eid, material)
-      }
-
-      if (this.threeRenderer) {
-        if (this.threeRenderer.getActiveHDRI() !== snapshot.activeHDRI) {
-          await this.threeRenderer.loadHDRI(snapshot.activeHDRI)
-        }
-
-        this.threeRenderer.setExposure(snapshot.exposure)
-        this.threeRenderer.postProcessing.setBloom(
-          snapshot.bloom.strength,
-          snapshot.bloom.radius,
-          snapshot.bloom.threshold,
-        )
-        this.threeRenderer.postProcessing.setVignetteEnabled(snapshot.cinematic.vignetteEnabled)
-        this.threeRenderer.postProcessing.setVignette(snapshot.cinematic.vignette, 0.9)
-        this.threeRenderer.postProcessing.setChromaticAberration(snapshot.cinematic.chromaticAberration)
-        this.threeRenderer.postProcessing.setFilmGrain(snapshot.cinematic.filmGrain)
-        this.threeRenderer.postProcessing.setColorTemperature(snapshot.cinematic.colorTemperature)
-
-        if (this.threeRenderer.turntable) {
-          this.threeRenderer.turntable.autoRotate = snapshot.autoRotate
-          this.threeRenderer.turntable.autoRotateSpeed = snapshot.autoRotateSpeed
-        }
-      }
-
-      store.setActiveHDRI(snapshot.activeHDRI)
-      store.setExposure(snapshot.exposure)
-      store.setBloom({ ...snapshot.bloom })
-      store.setCinematic({ ...snapshot.cinematic })
-      store.setAutoRotate(snapshot.autoRotate)
-      store.setAutoRotateSpeed(snapshot.autoRotateSpeed)
-      this.syncEntitiesToStore()
+      this.currentScene = snapshot.scene ? cloneSceneDoc(snapshot.scene) : null
+      this.runtime.setSceneAssets(this.currentAssets)
+      await this.runtime.buildFromCanonical(this.currentScene ?? createEmptySceneDoc())
+      await this.runtime.setViewSettings(snapshot.viewSettings)
+      publishViewSettings(snapshot.viewSettings)
+      publishEntities(this.currentScene)
     } finally {
-      this.isApplyingHistory = false
+      this.history.endApplyingHistory()
     }
-  }
-
-  private applyTransformSnapshot(eid: number, transform: TransformSnapshot): void {
-    Transform.px[eid] = transform.px
-    Transform.py[eid] = transform.py
-    Transform.pz[eid] = transform.pz
-    Transform.rx[eid] = transform.rx
-    Transform.ry[eid] = transform.ry
-    Transform.rz[eid] = transform.rz
-    Transform.sx[eid] = transform.sx
-    Transform.sy[eid] = transform.sy
-    Transform.sz[eid] = transform.sz
-    addComponent(world, eid, DirtyTransform)
-  }
-
-  private applyMaterialSnapshot(eid: number, material: MaterialSnapshot): void {
-    Material.roughness[eid] = material.roughness
-    Material.metalness[eid] = material.metalness
-    Material.envMapIntensity[eid] = material.envMapIntensity
-    Material.r[eid] = material.r
-    Material.g[eid] = material.g
-    Material.b[eid] = material.b
-    addComponent(world, eid, DirtyMaterial)
-  }
-
-  private captureTransform(eid: number): TransformSnapshot {
-    return {
-      px: Transform.px[eid],
-      py: Transform.py[eid],
-      pz: Transform.pz[eid],
-      rx: Transform.rx[eid],
-      ry: Transform.ry[eid],
-      rz: Transform.rz[eid],
-      sx: Transform.sx[eid],
-      sy: Transform.sy[eid],
-      sz: Transform.sz[eid],
-    }
-  }
-
-  private captureMaterial(eid: number): MaterialSnapshot {
-    return {
-      eid,
-      roughness: Material.roughness[eid],
-      metalness: Material.metalness[eid],
-      envMapIntensity: Material.envMapIntensity[eid],
-      r: Material.r[eid],
-      g: Material.g[eid],
-      b: Material.b[eid],
-    }
-  }
-
-  private hasTransformChange(
-    eid: number,
-    transform: Partial<TransformSnapshot>,
-  ): boolean {
-    return (
-      (transform.px !== undefined && Transform.px[eid] !== transform.px)
-      || (transform.py !== undefined && Transform.py[eid] !== transform.py)
-      || (transform.pz !== undefined && Transform.pz[eid] !== transform.pz)
-      || (transform.rx !== undefined && Transform.rx[eid] !== transform.rx)
-      || (transform.ry !== undefined && Transform.ry[eid] !== transform.ry)
-      || (transform.rz !== undefined && Transform.rz[eid] !== transform.rz)
-      || (transform.sx !== undefined && Transform.sx[eid] !== transform.sx)
-      || (transform.sy !== undefined && Transform.sy[eid] !== transform.sy)
-      || (transform.sz !== undefined && Transform.sz[eid] !== transform.sz)
-    )
-  }
-
-  private hasMaterialChange(
-    eid: number,
-    material: Partial<Omit<MaterialSnapshot, 'eid'>>,
-  ): boolean {
-    return (
-      (material.roughness !== undefined && Material.roughness[eid] !== material.roughness)
-      || (material.metalness !== undefined && Material.metalness[eid] !== material.metalness)
-      || (
-        material.envMapIntensity !== undefined
-        && Material.envMapIntensity[eid] !== material.envMapIntensity
-      )
-      || (material.r !== undefined && Material.r[eid] !== material.r)
-      || (material.g !== undefined && Material.g[eid] !== material.g)
-      || (material.b !== undefined && Material.b[eid] !== material.b)
-    )
   }
 
   private areSnapshotsEqual(a: EngineSnapshot, b: EngineSnapshot): boolean {
     return JSON.stringify(a) === JSON.stringify(b)
   }
 
-  private getCurrentHistorySnapshot(): EngineSnapshot | null {
-    return this.history[this.historyIndex] ?? null
-  }
-
   private canUndo(): boolean {
-    return this.historyIndex > 0
+    return this.history.canUndo()
   }
 
   private canRedo(): boolean {
-    return this.historyIndex >= 0 && this.historyIndex < this.history.length - 1
+    return this.history.canRedo()
   }
 
   private getUndoDepth(): number {
-    return Math.max(this.historyIndex, 0)
+    return this.history.getUndoDepth()
   }
 
   private getRedoDepth(): number {
-    if (this.historyIndex < 0) return 0
-    return Math.max(this.history.length - this.historyIndex - 1, 0)
+    return this.history.getRedoDepth()
   }
 
   private getConsoleState(): object {
-    const state = useEngineStore.getState()
-    return {
-      isLoading: state.isLoading,
-      hasModel: state.hasModel,
+    return buildConsoleState({
+      hasCanonicalScene: Boolean(this.currentScene),
       canUndo: this.canUndo(),
       canRedo: this.canRedo(),
-      history: {
-        undoDepth: this.getUndoDepth(),
-        redoDepth: this.getRedoDepth(),
-        currentIndex: this.historyIndex,
-        totalStates: this.history.length,
-      },
+      undoDepth: this.getUndoDepth(),
+      redoDepth: this.getRedoDepth(),
+      currentIndex: this.history.currentIndex,
+      totalStates: this.history.totalStates,
       transformMode: this.getTransformGizmoMode(),
-      entities: state.entities,
-      activeHDRI: state.activeHDRI,
-      exposure: state.exposure,
-      bloom: state.bloom,
-      cinematic: state.cinematic,
-      autoRotate: state.autoRotate,
-      autoRotateSpeed: state.autoRotateSpeed,
-    }
+      pathTracingReadiness: this.getPathTracingReadinessReport(),
+    })
   }
+}
+
+function eulerToQuaternionTuple(
+  rx: number,
+  ry: number,
+  rz: number,
+): Quat {
+  const halfX = rx * 0.5
+  const halfY = ry * 0.5
+  const halfZ = rz * 0.5
+
+  const sx = Math.sin(halfX)
+  const cx = Math.cos(halfX)
+  const sy = Math.sin(halfY)
+  const cy = Math.cos(halfY)
+  const sz = Math.sin(halfZ)
+  const cz = Math.cos(halfZ)
+
+  return [
+    sx * cy * cz + cx * sy * sz,
+    cx * sy * cz - sx * cy * sz,
+    cx * cy * sz + sx * sy * cz,
+    cx * cy * cz - sx * sy * sz,
+  ]
+}
+
+function quaternionToEulerXYZ([x, y, z, w]: Quat): [number, number, number] {
+  const sinrCosp = 2 * (w * x + y * z)
+  const cosrCosp = 1 - 2 * (x * x + y * y)
+  const rx = Math.atan2(sinrCosp, cosrCosp)
+
+  const sinp = 2 * (w * y - z * x)
+  const ry = Math.abs(sinp) >= 1 ? Math.sign(sinp) * (Math.PI / 2) : Math.asin(sinp)
+
+  const sinyCosp = 2 * (w * z + x * y)
+  const cosyCosp = 1 - 2 * (y * y + z * z)
+  const rz = Math.atan2(sinyCosp, cosyCosp)
+
+  return [rx, ry, rz]
 }

@@ -11,7 +11,7 @@ interface MaterialPanelProps {
 
 export function MaterialPanel({ engine }: MaterialPanelProps) {
   const entities = useEngineStore((s) => s.entities)
-  const [selectedEid, setSelectedEid] = useState<number | null>(null)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
 
   if (entities.length === 0) {
     return (
@@ -22,7 +22,7 @@ export function MaterialPanel({ engine }: MaterialPanelProps) {
     )
   }
 
-  const selectedEntity = entities.find((entity) => entity.eid === selectedEid) ?? entities[0]
+  const selectedEntity = entities.find((entity) => entity.nodeId === selectedNodeId) ?? entities[0]
 
   return (
     <div className="panel" id="material-panel">
@@ -36,9 +36,9 @@ export function MaterialPanel({ engine }: MaterialPanelProps) {
 
           return (
             <button
-              key={entity.eid}
-              className={`element-card ${selectedEntity.eid === entity.eid ? 'active' : ''}`}
-              onClick={() => setSelectedEid(entity.eid)}
+              key={entity.nodeId}
+              className={`element-card ${selectedEntity.nodeId === entity.nodeId ? 'active' : ''}`}
+              onClick={() => setSelectedNodeId(entity.nodeId)}
               style={elementStyle}
             >
               <span className="element-card-bg" aria-hidden />
@@ -104,7 +104,7 @@ function MaterialEntity({ entity, engine }: { entity: EntityInfo; engine: Engine
         step="0.01"
         value={entity.roughness}
         onChange={(e) =>
-          engine.setMaterial(entity.eid, { roughness: parseFloat(e.target.value) })
+          engine.setMaterial(entity.nodeId, { roughness: parseFloat(e.target.value) })
         }
         className="slider"
         {...rangeHistoryProps}
@@ -121,7 +121,7 @@ function MaterialEntity({ entity, engine }: { entity: EntityInfo; engine: Engine
         step="0.01"
         value={entity.metalness}
         onChange={(e) =>
-          engine.setMaterial(entity.eid, { metalness: parseFloat(e.target.value) })
+          engine.setMaterial(entity.nodeId, { metalness: parseFloat(e.target.value) })
         }
         className="slider"
         {...rangeHistoryProps}
@@ -138,7 +138,7 @@ function MaterialEntity({ entity, engine }: { entity: EntityInfo; engine: Engine
         step="0.05"
         value={entity.envMapIntensity}
         onChange={(e) =>
-          engine.setMaterial(entity.eid, { envMapIntensity: parseFloat(e.target.value) })
+          engine.setMaterial(entity.nodeId, { envMapIntensity: parseFloat(e.target.value) })
         }
         className="slider"
         {...rangeHistoryProps}
@@ -152,7 +152,7 @@ function MaterialEntity({ entity, engine }: { entity: EntityInfo; engine: Engine
         value={rgbToHex(entity.r, entity.g, entity.b)}
         onChange={(e) => {
           const { r, g, b } = hexToRgb(e.target.value)
-          engine.setMaterial(entity.eid, { r, g, b })
+          engine.setMaterial(entity.nodeId, { r, g, b })
         }}
         className="color-picker"
       />

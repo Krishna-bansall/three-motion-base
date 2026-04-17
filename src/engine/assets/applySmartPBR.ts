@@ -1,35 +1,22 @@
-/**
- * Step 4: Smart PBR Defaults
- * 
- * Applies sensible PBR defaults to meshes that lack proper PBR maps.
- * Only overrides when the artist didn't provide data.
- */
+/** Applies fallback PBR tuning without stomping authored texture data. */
 import * as THREE from 'three'
 
-/**
- * Apply smart PBR defaults to a MeshStandardMaterial.
- * Only modifies values when no maps are present.
- */
+/** Applies fallback values to a single standard material. */
 export function applySmartPBRDefaults(material: THREE.MeshStandardMaterial): void {
-  // If no roughness map, set a good default
   if (!material.roughnessMap) {
     material.roughness = 0.4
   }
 
-  // If no metalness map, default to dielectric (non-metal)
   if (!material.metalnessMap) {
     material.metalness = 0.0
   }
 
-  // Slightly punchy reflections
   material.envMapIntensity = 1.2
 
   material.needsUpdate = true
 }
 
-/**
- * Apply smart PBR defaults to all meshes in a scene graph.
- */
+/** Walks a scene graph and applies the same fallback treatment to each mesh. */
 export function applySmartPBRDefaultsToScene(root: THREE.Object3D): void {
   root.traverse((node) => {
     if (node instanceof THREE.Mesh) {

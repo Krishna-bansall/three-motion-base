@@ -6,7 +6,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useEngineStore } from '../store/useEngineStore'
 import type { EngineAPI } from '../engine/EngineAPI'
-import type { TransformGizmoMode } from '../engine/renderer/ThreeRenderer'
+import type { TransformGizmoMode } from '../engine/runtime/types'
 
 type ModelSource =
   | { type: 'sample' }

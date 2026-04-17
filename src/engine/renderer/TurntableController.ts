@@ -1,23 +1,18 @@
-/**
- * Step 5: TurntableController
- * 
- * Rotates the product root group via pointer drag.
- * No auto-rotate — user controls that via UI settings.
- */
+/** Pointer-driven orbit controller for the model root. */
 import * as THREE from 'three'
 
 export interface TurntableOptions {
-  /** Rotation speed multiplier. Default: 0.005 */
+  /** Rotation speed multiplier. */
   rotationSpeed?: number
-  /** Enable inertia (momentum after release). Default: true */
+  /** Enables momentum after the pointer is released. */
   enableInertia?: boolean
-  /** Inertia damping factor (0–1). Default: 0.92 */
+  /** Damping factor applied while momentum decays. */
   inertiaDamping?: number
-  /** Enable auto-rotate. Default: false */
+  /** Enables idle auto-rotation. */
   autoRotate?: boolean
-  /** Auto-rotate speed (rad/s). Default: 0.3 */
+  /** Idle rotation speed in radians per second. */
   autoRotateSpeed?: number
-  /** Max vertical rotation in radians. Default: π/3 (~60°) */
+  /** Maximum up/down tilt in radians. */
   maxPolarAngle?: number
 }
 
@@ -37,7 +32,6 @@ export class TurntableController {
   autoRotateSpeed: number
   enabled = true
 
-  // bound handlers for cleanup
   private _onPointerDown: (e: PointerEvent) => void
   private _onPointerMove: (e: PointerEvent) => void
   private _onPointerUp: (e: PointerEvent) => void
@@ -92,21 +86,18 @@ export class TurntableController {
   }
 
   private applyRotation(deltaX: number, deltaY: number): void {
-    // Y-axis rotation (horizontal drag)
     this.target.rotation.y += deltaX
 
-    // X-axis rotation (vertical drag) — clamped
     const newPolar = this.currentPolarAngle + deltaY
     const clamped = Math.max(-this.maxPolarAngle, Math.min(this.maxPolarAngle, newPolar))
     this.target.rotation.x = clamped
     this.currentPolarAngle = clamped
   }
 
-  /** Call once per frame (in the render loop) */
+  /** Advances inertia and optional idle rotation. */
   update(delta: number): void {
     if (!this.enabled) return
 
-    // Inertia: apply leftover velocity when not dragging
     if (!this.isDragging && this.enableInertia) {
       if (Math.abs(this.velocity.x) > 0.0001 || Math.abs(this.velocity.y) > 0.0001) {
         this.applyRotation(this.velocity.x, this.velocity.y)
@@ -115,7 +106,6 @@ export class TurntableController {
       }
     }
 
-    // Auto-rotate (only when not dragging and user enabled it)
     if (this.autoRotate && !this.isDragging) {
       this.target.rotation.y += this.autoRotateSpeed * delta
     }
