@@ -14,6 +14,12 @@ interface FiltersPanelProps {
 export function FiltersPanel({ engine }: FiltersPanelProps) {
   const bloom = useEngineStore((s) => s.bloom)
   const cinematic = useEngineStore((s) => s.cinematic)
+  const rangeHistoryProps = {
+    onPointerDown: () => engine.beginHistoryBatch(),
+    onPointerUp: () => engine.endHistoryBatch(),
+    onPointerCancel: () => engine.endHistoryBatch(),
+    onBlur: () => engine.endHistoryBatch(),
+  }
 
   return (
     <div className="panel" id="filters-panel">
@@ -39,6 +45,7 @@ export function FiltersPanel({ engine }: FiltersPanelProps) {
         onChange={(e) => engine.setColorTemperature(parseFloat(e.target.value))}
         className="slider"
         id="filter-color-temp"
+        {...rangeHistoryProps}
       />
 
       {/* ── Bloom ── */}
@@ -57,6 +64,7 @@ export function FiltersPanel({ engine }: FiltersPanelProps) {
         }
         className="slider"
         id="filter-bloom-strength"
+        {...rangeHistoryProps}
       />
 
       <label className="slider-label">
@@ -74,6 +82,7 @@ export function FiltersPanel({ engine }: FiltersPanelProps) {
         }
         className="slider"
         id="filter-bloom-radius"
+        {...rangeHistoryProps}
       />
 
       {/* ── Vignette ── */}
@@ -99,6 +108,7 @@ export function FiltersPanel({ engine }: FiltersPanelProps) {
         className="slider"
         id="filter-vignette"
         disabled={!cinematic.vignetteEnabled}
+        {...rangeHistoryProps}
       />
 
       {/* ── Film Grain ── */}
@@ -115,6 +125,7 @@ export function FiltersPanel({ engine }: FiltersPanelProps) {
         onChange={(e) => engine.setFilmGrain(parseFloat(e.target.value))}
         className="slider"
         id="filter-grain"
+        {...rangeHistoryProps}
       />
 
       {/* ── Chromatic Aberration ── */}
@@ -131,18 +142,21 @@ export function FiltersPanel({ engine }: FiltersPanelProps) {
         onChange={(e) => engine.setChromaticAberration(parseFloat(e.target.value))}
         className="slider"
         id="filter-chromatic"
+        {...rangeHistoryProps}
       />
 
       {/* ── Reset ── */}
       <button
         className="filter-reset-btn"
         onClick={() => {
-          engine.setColorTemperature(0)
-          engine.setBloom(0.3, 0.6, 0.85)
-          engine.setVignetteEnabled(true)
-          engine.setVignette(0.35)
-          engine.setFilmGrain(0)
-          engine.setChromaticAberration(0.003)
+          engine.runHistoryBatch(() => {
+            engine.setColorTemperature(0)
+            engine.setBloom(0.3, 0.6, 0.85)
+            engine.setVignetteEnabled(true)
+            engine.setVignette(0.35)
+            engine.setFilmGrain(0)
+            engine.setChromaticAberration(0.003)
+          })
         }}
         id="filter-reset"
       >

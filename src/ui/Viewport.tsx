@@ -1,9 +1,9 @@
 /**
  * Viewport — Canvas container for Three.js renderer.
- * 
+ *
  * Mounts the engine, then loads the model from the provided source.
  */
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useCallback } from 'react'
 import { useEngineStore } from '../store/useEngineStore'
 import type { EngineAPI } from '../engine/EngineAPI'
 import type { TransformGizmoMode } from '../engine/renderer/ThreeRenderer'
@@ -18,6 +18,12 @@ interface ViewportProps {
   modelSource: ModelSource
 }
 
+type HistoryToast = {
+  id: number
+  label: 'Undo' | 'Redo'
+  icon: 'undo' | 'redo'
+}
+
 export function Viewport({ engine, modelSource }: ViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isLoading = useEngineStore((s) => s.isLoading)
@@ -25,6 +31,34 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
   const canRedo = useEngineStore((s) => s.canRedo)
   const hasInitialized = useRef(false)
   const [transformMode, setTransformMode] = useState<TransformGizmoMode | null>('rotate')
+  const [toast, setToast] = useState<HistoryToast | null>(null)
+  const toastTimerRef = useRef<number | null>(null)
+
+  const showToast = useCallback((label: HistoryToast['label'], icon: HistoryToast['icon']) => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current)
+    }
+
+    setToast({ id: Date.now(), label, icon })
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null)
+      toastTimerRef.current = null
+    }, 1200)
+  }, [])
+
+  const runUndo = useCallback(async () => {
+    const didUndo = await engine.undo()
+    if (didUndo) {
+      showToast('Undo', 'undo')
+    }
+  }, [engine, showToast])
+
+  const runRedo = useCallback(async () => {
+    const didRedo = await engine.redo()
+    if (didRedo) {
+      showToast('Redo', 'redo')
+    }
+  }, [engine, showToast])
 
   useEffect(() => {
     if (!containerRef.current || hasInitialized.current) return
@@ -57,6 +91,9 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
 
     return () => {
       window.clearTimeout(loadTimer)
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current)
+      }
       engine.dispose()
       hasInitialized.current = false
     }
@@ -83,13 +120,13 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
       if (isUndoRedoChord) {
         if (key === 'z' && !event.shiftKey) {
           event.preventDefault()
-          void engine.undo()
+          void runUndo()
           return
         }
 
         if (key === 'r' || (key === 'z' && event.shiftKey)) {
           event.preventDefault()
-          void engine.redo()
+          void runRedo()
           return
         }
       }
@@ -114,7 +151,7 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [engine])
+  }, [runRedo, runUndo])
 
   return (
     <div id="viewport-wrapper" className="viewport-wrapper">
@@ -122,7 +159,7 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
       <div className="viewport-history-toolbar">
         <button
           className="viewport-history-btn"
-          onClick={() => void engine.undo()}
+          onClick={() => void runUndo()}
           type="button"
           disabled={!canUndo}
           title="Undo (Ctrl/Cmd+Z)"
@@ -132,7 +169,7 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
         </button>
         <button
           className="viewport-history-btn"
-          onClick={() => void engine.redo()}
+          onClick={() => void runRedo()}
           type="button"
           disabled={!canRedo}
           title="Redo (Ctrl/Cmd+R)"
@@ -175,6 +212,12 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
           <span>R</span>
         </button>
       </div>
+      {toast && (
+        <div key={toast.id} className="viewport-history-toast" role="status" aria-live="polite">
+          <span className="material-symbols-rounded" aria-hidden>{toast.icon}</span>
+          <span>{toast.label}</span>
+        </div>
+      )}
       {isLoading && (
         <div className="viewport-loader">
           <div className="loader-spinner" />

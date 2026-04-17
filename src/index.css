@@ -229,6 +229,34 @@ html, body, #root {
   cursor: not-allowed;
 }
 
+.viewport-history-toast {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(17, 17, 24, 0.88);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  color: var(--text-primary);
+  backdrop-filter: blur(14px);
+  z-index: 9;
+  animation: viewportToastIn 0.2s var(--ease-out);
+}
+
+.viewport-history-toast .material-symbols-rounded {
+  font-size: 18px;
+  color: var(--accent-hover);
+}
+
+.viewport-history-toast span:last-child {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 /* ── Viewport Loader ── */
 .viewport-loader {
   position: absolute;
@@ -1083,6 +1111,17 @@ html, body, #root {
   from {
     opacity: 0;
     transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes viewportToastIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
   to {
     opacity: 1;

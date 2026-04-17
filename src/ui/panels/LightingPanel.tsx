@@ -154,6 +154,12 @@ export function LightingPanel({ engine }: LightingPanelProps) {
   const exposure = useEngineStore((s) => s.exposure)
   const autoRotate = useEngineStore((s) => s.autoRotate)
   const autoRotateSpeed = useEngineStore((s) => s.autoRotateSpeed)
+  const rangeHistoryProps = {
+    onPointerDown: () => engine.beginHistoryBatch(),
+    onPointerUp: () => engine.endHistoryBatch(),
+    onPointerCancel: () => engine.endHistoryBatch(),
+    onBlur: () => engine.endHistoryBatch(),
+  }
 
   return (
     <div className="panel" id="lighting-panel">
@@ -193,6 +199,7 @@ export function LightingPanel({ engine }: LightingPanelProps) {
         value={exposure}
         onChange={(e) => engine.setExposure(parseFloat(e.target.value))}
         className="slider"
+        {...rangeHistoryProps}
       />
 
       {/* Auto-Rotate */}
@@ -220,6 +227,7 @@ export function LightingPanel({ engine }: LightingPanelProps) {
             value={autoRotateSpeed}
             onChange={(e) => engine.setAutoRotateSpeed(parseFloat(e.target.value))}
             className="slider"
+            {...rangeHistoryProps}
           />
         </>
       )}
