@@ -1,7 +1,7 @@
 /**
  * MaterialPanel — Sliders and color picker for PBR material properties.
  */
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { useEngineStore, type EntityInfo } from '../../store/useEngineStore'
 import type { EngineAPI } from '../../engine/EngineAPI'
 
@@ -12,19 +12,6 @@ interface MaterialPanelProps {
 export function MaterialPanel({ engine }: MaterialPanelProps) {
   const entities = useEngineStore((s) => s.entities)
   const [selectedEid, setSelectedEid] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (entities.length === 0) {
-      if (selectedEid !== null) {
-        setSelectedEid(null)
-      }
-      return
-    }
-
-    if (selectedEid === null || !entities.some((entity) => entity.eid === selectedEid)) {
-      setSelectedEid(entities[0].eid)
-    }
-  }, [entities, selectedEid])
 
   if (entities.length === 0) {
     return (
@@ -82,6 +69,13 @@ function rgbToCss(r: number, g: number, b: number): string {
 }
 
 function MaterialEntity({ entity, engine }: { entity: EntityInfo; engine: EngineAPI }) {
+  const rangeHistoryProps = {
+    onPointerDown: () => engine.beginHistoryBatch(),
+    onPointerUp: () => engine.endHistoryBatch(),
+    onPointerCancel: () => engine.endHistoryBatch(),
+    onBlur: () => engine.endHistoryBatch(),
+  }
+
   const rgbToHex = (r: number, g: number, b: number) => {
     const toHex = (v: number) =>
       Math.round(Math.max(0, Math.min(1, v)) * 255)
@@ -113,6 +107,7 @@ function MaterialEntity({ entity, engine }: { entity: EntityInfo; engine: Engine
           engine.setMaterial(entity.eid, { roughness: parseFloat(e.target.value) })
         }
         className="slider"
+        {...rangeHistoryProps}
       />
 
       <label className="slider-label">
@@ -129,6 +124,7 @@ function MaterialEntity({ entity, engine }: { entity: EntityInfo; engine: Engine
           engine.setMaterial(entity.eid, { metalness: parseFloat(e.target.value) })
         }
         className="slider"
+        {...rangeHistoryProps}
       />
 
       <label className="slider-label">
@@ -145,6 +141,7 @@ function MaterialEntity({ entity, engine }: { entity: EntityInfo; engine: Engine
           engine.setMaterial(entity.eid, { envMapIntensity: parseFloat(e.target.value) })
         }
         className="slider"
+        {...rangeHistoryProps}
       />
 
       <label className="slider-label">

@@ -113,6 +113,8 @@ export class EngineAPI {
   private historyIndex = -1
   private pendingTransformSnapshot: EngineSnapshot | null = null
   private isApplyingHistory = false
+  private historyBatchDepth = 0
+  private historyBatchStart: EngineSnapshot | null = null
 
   // ── Lifecycle ───────────────────────────────────────────
 
@@ -213,6 +215,8 @@ export class EngineAPI {
 
     this.currentModel = null
     this.pendingTransformSnapshot = null
+    this.historyBatchDepth = 0
+    this.historyBatchStart = null
 
     const store = useEngineStore.getState()
     store.setHasModel(false)
@@ -332,6 +336,44 @@ export class EngineAPI {
     }
     useEngineStore.getState().setAutoRotateSpeed(speed)
     this.commitCurrentSnapshot()
+  }
+
+  beginHistoryBatch(): void {
+    if (this.isApplyingHistory) return
+
+    if (this.historyBatchDepth === 0) {
+      this.historyBatchStart = this.captureSnapshot()
+    }
+
+    this.historyBatchDepth += 1
+  }
+
+  endHistoryBatch(): void {
+    if (this.isApplyingHistory || this.historyBatchDepth === 0) return
+
+    this.historyBatchDepth -= 1
+
+    if (this.historyBatchDepth > 0) return
+
+    const before = this.historyBatchStart
+    const after = this.captureSnapshot()
+    this.historyBatchStart = null
+
+    if (!before || !after || this.areSnapshotsEqual(before, after)) {
+      this.publishHistoryState()
+      return
+    }
+
+    this.pushHistorySnapshot(after)
+  }
+
+  runHistoryBatch(action: () => void): void {
+    this.beginHistoryBatch()
+    try {
+      action()
+    } finally {
+      this.endHistoryBatch()
+    }
   }
 
   async undo(): Promise<boolean> {
@@ -608,11 +650,14 @@ export class EngineAPI {
     this.history = [snapshot]
     this.historyIndex = 0
     this.pendingTransformSnapshot = null
+    this.historyBatchDepth = 0
+    this.historyBatchStart = null
     this.publishHistoryState()
   }
 
   private commitCurrentSnapshot(): void {
     if (this.isApplyingHistory) return
+    if (this.historyBatchDepth > 0) return
 
     const snapshot = this.captureSnapshot()
     if (!snapshot) return
@@ -640,6 +685,8 @@ export class EngineAPI {
     this.history = []
     this.historyIndex = -1
     this.pendingTransformSnapshot = null
+    this.historyBatchDepth = 0
+    this.historyBatchStart = null
     this.publishHistoryState()
   }
 
