@@ -16,7 +16,7 @@ export type HDRIPreset = 'studio' | 'moody' | 'daylight'
 export type TransformGizmoMode = 'translate' | 'rotate' | 'scale'
 
 /** Bundled HDRI paths (relative to /public) */
-const HDRI_PATHS: Record<HDRIPreset, string> = {
+export const HDRI_PATHS: Record<HDRIPreset, string> = {
   studio: '/hdri/studio.hdr',
   moody: '/hdri/moody.hdr',
   daylight: '/hdri/daylight.hdr',
