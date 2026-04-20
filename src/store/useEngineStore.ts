@@ -6,10 +6,11 @@
  */
 import { create } from 'zustand'
 import type { BloomSettings, CinematicSettings } from '../engine/renderer/PostProcessing'
-import type { HDRIPreset } from '../engine/renderer/ThreeRenderer'
+import type { HDRIPreset } from '../engine/runtime/types'
 
 export interface EntityInfo {
-  eid: number
+  nodeId: string
+  materialId: string
   name: string
   roughness: number
   metalness: number

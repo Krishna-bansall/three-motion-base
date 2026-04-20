@@ -1,29 +1,17 @@
 /**
- * Step 4: GLTF Loader Pipeline
- * 
- * GLTFLoader → traverse → mint ECS entities → side-maps.
- * Centers and normalizes the loaded model to fit a unit bounding box.
+ * Loads GLTF/GLB assets into the engine's canonical scene format and produces
+ * a cloneable runtime template for the active renderer.
  */
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
-import { addEntity, addComponent } from 'bitecs'
-import { world } from '../ecs/world'
-import {
-  Transform,
-  Material,
-  MeshRef,
-  ProductRoot,
-  eidToObject3D,
-  eidToMaterial,
-} from '../ecs/components'
 import { applySmartPBRDefaultsToScene } from './applySmartPBR'
-
-// ── Loader setup ────────────────────────────────────────────
+import { cloneSceneDoc, createEmptySceneDoc } from '../scene/snapshot'
+import type { MaterialId, MeshId, NodeId, SceneDoc, SceneNode } from '../scene/types'
+import type { RuntimeSceneAssetBundle, RuntimeSceneInstance } from '../runtime/types'
 
 const gltfLoader = new GLTFLoader()
 
-// DRACO decoder for compressed meshes
 const dracoLoader = new DRACOLoader()
 dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/')
 dracoLoader.setDecoderConfig({ type: 'js' })
@@ -31,54 +19,33 @@ gltfLoader.setDRACOLoader(dracoLoader)
 
 type FileWithRelativePath = File & { webkitRelativePath?: string }
 
-// ── Types ───────────────────────────────────────────────────
-
 export interface LoadedModel {
-  /** The ECS entity ID of the product root */
-  rootEid: number
-  /** All mesh entity IDs created */
-  meshEids: number[]
-  /** The Three.js group added to the scene */
-  group: THREE.Group
+  /** Canonical renderer-agnostic scene graph */
+  canonicalScene: SceneDoc
+  /** Runtime asset bundle used by adapters to rebuild renderer state */
+  runtimeAssets: RuntimeSceneAssetBundle
 }
 
-// ── Loading ─────────────────────────────────────────────────
-
-/**
- * Load a GLTF/GLB model from a URL.
- */
+/** Loads a model from a URL. */
 export async function loadGLTFFromURL(url: string): Promise<LoadedModel> {
   const gltf = await gltfLoader.loadAsync(url)
-  return processGLTF(gltf.scene)
+  return processGLTF(gltf.scene, url)
 }
 
-/**
- * Load a GLTF/GLB model from a File (drag-drop workflow).
- * Works for .glb (self-contained) files.
- */
+/** Loads a self-contained model file, typically from drag and drop. */
 export async function loadGLTFFromFile(file: File): Promise<LoadedModel> {
   const url = URL.createObjectURL(file)
   try {
     const gltf = await gltfLoader.loadAsync(url)
-    return processGLTF(gltf.scene)
+    return processGLTF(gltf.scene, file.name)
   } finally {
     URL.revokeObjectURL(url)
   }
 }
 
 /**
- * Load a GLTF model from multiple files (GLTF + textures + .bin).
- * 
- * Builds an in-memory blob URL filesystem so GLTFLoader can resolve
- * relative resource references (textures, .bin buffers).
- * 
- * How it works:
- * 1. Find the .gltf file among the provided files
- * 2. Create blob URLs for every file, keyed by relative path
- * 3. Set GLTFLoader's resource path to "" and use a custom LoadingManager
- *    that intercepts URL resolution and maps relative paths to blob URLs
- * 4. Load the GLTF using the blob URL of the .gltf file
- * 5. Clean up all blob URLs afterward
+ * Loads a split `.gltf` package by translating relative asset references into
+ * in-memory blob URLs for the loader.
  */
 export async function loadGLTFFromFiles(files: File[]): Promise<LoadedModel> {
   const gltfFile = files.find(f => f.name.endsWith('.gltf'))
@@ -86,8 +53,6 @@ export async function loadGLTFFromFiles(files: File[]): Promise<LoadedModel> {
     throw new Error('No .gltf file found in the provided files')
   }
 
-  // Build a map of filename → blob URL for all files
-  // Handle both flat file lists and webkitdirectory paths
   const blobUrlMap = new Map<string, string>()
   const allBlobUrls: string[] = []
 
@@ -95,138 +60,258 @@ export async function loadGLTFFromFiles(files: File[]): Promise<LoadedModel> {
     const blobUrl = URL.createObjectURL(file)
     allBlobUrls.push(blobUrl)
 
-    // Use webkitRelativePath if available (folder upload), otherwise just name
-    const relativePath = (file as FileWithRelativePath).webkitRelativePath || file.name
+    const relativePath = normalizeAssetPath(
+      (file as FileWithRelativePath).webkitRelativePath || file.name,
+    )
 
-    // Store by filename only (no directory prefix)
     const filename = relativePath.split('/').pop() || file.name
     blobUrlMap.set(filename, blobUrl)
-
-    // Also store the full relative path (some GLTF files use subdirectory refs)
     blobUrlMap.set(relativePath, blobUrl)
   }
 
-  // Create a custom LoadingManager that resolves resource URLs via our blob map
   const manager = new THREE.LoadingManager()
-  const gltfBlobUrl = blobUrlMap.get(gltfFile.name)!
+  const gltfRelativePath = normalizeAssetPath(
+    (gltfFile as FileWithRelativePath).webkitRelativePath || gltfFile.name,
+  )
+  const gltfBlobUrl = blobUrlMap.get(gltfRelativePath) || blobUrlMap.get(gltfFile.name)
+  if (!gltfBlobUrl) {
+    throw new Error(`Unable to resolve blob URL for ${gltfRelativePath}`)
+  }
 
   manager.setURLModifier((url: string) => {
-    // If it's the main GLTF file, return as-is
     if (url === gltfBlobUrl) return url
 
-    // Extract the filename from the URL (handles both relative and absolute paths)
-    const filename = url.split('/').pop() || url
+    const normalizedUrl = normalizeAssetPath(url)
+    const filename = normalizedUrl.split('/').pop() || normalizedUrl
 
-    // Check our blob map
-    const mapped = blobUrlMap.get(filename) || blobUrlMap.get(url)
+    const mapped = blobUrlMap.get(normalizedUrl) || blobUrlMap.get(filename)
     if (mapped) return mapped
 
-    // Fallback: return the original URL
     return url
   })
 
-  // Create a loader instance with our custom manager
   const customLoader = new GLTFLoader(manager)
   customLoader.setDRACOLoader(dracoLoader)
 
   try {
     const gltf = await customLoader.loadAsync(gltfBlobUrl)
-    return processGLTF(gltf.scene)
+    return processGLTF(gltf.scene, gltfFile.name)
   } finally {
-    // Clean up all blob URLs
     for (const url of allBlobUrls) {
       URL.revokeObjectURL(url)
     }
   }
 }
 
-// ── Processing ──────────────────────────────────────────────
-
-function processGLTF(gltfScene: THREE.Group): LoadedModel {
-  // Apply smart PBR defaults
+function processGLTF(gltfScene: THREE.Group, sourceUri: string): LoadedModel {
   applySmartPBRDefaultsToScene(gltfScene)
-
-  // Center and normalize
   centerAndNormalize(gltfScene)
 
-  // Create wrapper group
   const group = new THREE.Group()
+  group.name = 'ProductRoot'
   group.add(gltfScene)
 
-  // Mint product root entity
-  const rootEid = addEntity(world)
-  addComponent(world, rootEid, ProductRoot)
-  addComponent(world, rootEid, Transform)
-  eidToObject3D.set(rootEid, group)
+  const canonicalScene = createEmptySceneDoc()
+  const nodeIdByObject = new Map<THREE.Object3D, NodeId>()
+  const materialIdByMaterial = new Map<THREE.Material, MaterialId>()
+  let nextNodeIndex = 0
+  let nextMeshIndex = 0
+  let nextMaterialIndex = 0
 
-  // Set initial transform
-  Transform.px[rootEid] = 0
-  Transform.py[rootEid] = 0
-  Transform.pz[rootEid] = 0
-  Transform.rx[rootEid] = 0
-  Transform.ry[rootEid] = 0
-  Transform.rz[rootEid] = 0
-  Transform.sx[rootEid] = 1
-  Transform.sy[rootEid] = 1
-  Transform.sz[rootEid] = 1
+  const rootNodeId = visitObject(group, null, 'ProductRoot')
+  canonicalScene.roots.push(rootNodeId)
+  const runtimeAssets = createRuntimeSceneAssetBundle(
+    cloneSceneDoc(canonicalScene),
+    sourceUri,
+    rootNodeId,
+    group,
+  )
 
-  // Mint entities for each mesh
-  const meshEids: number[] = []
+  return {
+    canonicalScene,
+    runtimeAssets,
+  }
 
-  gltfScene.traverse((node) => {
-    if (node instanceof THREE.Mesh) {
-      const eid = addEntity(world)
-      addComponent(world, eid, MeshRef)
-      addComponent(world, eid, Transform)
-      addComponent(world, eid, Material)
+  function visitObject(
+    object: THREE.Object3D,
+    parentId: NodeId | null,
+    fallbackName: string,
+  ): NodeId {
+    const nodeId = `node-${nextNodeIndex++}`
+    const sceneNode: SceneNode = {
+      id: nodeId,
+      parentId,
+      children: [],
+      name: object.name || fallbackName,
+      t: vector3ToTuple(object.position),
+      r: quaternionToTuple(object.quaternion),
+      s: vector3ToTuple(object.scale),
+      visible: object.visible,
+    }
 
-      eidToObject3D.set(eid, node)
+    object.userData.threeMotionNodeId = nodeId
 
-      // Populate transform from the mesh
-      Transform.px[eid] = node.position.x
-      Transform.py[eid] = node.position.y
-      Transform.pz[eid] = node.position.z
-      Transform.rx[eid] = node.rotation.x
-      Transform.ry[eid] = node.rotation.y
-      Transform.rz[eid] = node.rotation.z
-      Transform.sx[eid] = node.scale.x
-      Transform.sy[eid] = node.scale.y
-      Transform.sz[eid] = node.scale.z
-
-      // Populate material from the mesh
-      const mat = node.material as THREE.MeshStandardMaterial
-      if (mat && mat.isMeshStandardMaterial) {
-        eidToMaterial.set(eid, mat)
-        Material.roughness[eid] = mat.roughness
-        Material.metalness[eid] = mat.metalness
-        Material.envMapIntensity[eid] = mat.envMapIntensity
-        Material.r[eid] = mat.color.r
-        Material.g[eid] = mat.color.g
-        Material.b[eid] = mat.color.b
+    if (object instanceof THREE.Mesh) {
+      const meshId: MeshId = `mesh-${nextMeshIndex}`
+      canonicalScene.meshes[meshId] = {
+        source: {
+          uri: sourceUri,
+          primitive: nextMeshIndex,
+        },
       }
+      sceneNode.meshId = meshId
+      nextMeshIndex += 1
 
-      meshEids.push(eid)
+      const material = getCanonicalMaterial(object.material)
+      if (material) {
+        sceneNode.materialId = material
+        tagMaterials(object.material, material)
+      }
+    }
+
+    canonicalScene.nodes[nodeId] = sceneNode
+    nodeIdByObject.set(object, nodeId)
+
+    for (let i = 0; i < object.children.length; i += 1) {
+      const child = object.children[i]
+      const childId = visitObject(child, nodeId, `${child.type}-${i}`)
+      sceneNode.children.push(childId)
+    }
+
+    return nodeId
+  }
+
+  function getCanonicalMaterial(
+    materialLike: THREE.Material | THREE.Material[],
+  ): MaterialId | undefined {
+    const material = Array.isArray(materialLike) ? materialLike[0] : materialLike
+    if (!(material instanceof THREE.Material)) {
+      return undefined
+    }
+
+    const existingId = materialIdByMaterial.get(material)
+    if (existingId) {
+      return existingId
+    }
+
+    const materialId: MaterialId = `material-${nextMaterialIndex++}`
+    const standardMaterial = material as THREE.MeshStandardMaterial
+
+    canonicalScene.materials[materialId] = {
+      baseColor: standardMaterial.isMeshStandardMaterial
+        ? colorToTuple(standardMaterial.color)
+        : [1, 1, 1],
+      roughness: standardMaterial.isMeshStandardMaterial ? standardMaterial.roughness : 1,
+      metalness: standardMaterial.isMeshStandardMaterial ? standardMaterial.metalness : 0,
+      envMapIntensity: standardMaterial.isMeshStandardMaterial ? standardMaterial.envMapIntensity : 1,
+    }
+
+    materialIdByMaterial.set(material, materialId)
+    return materialId
+  }
+}
+
+function createRuntimeSceneAssetBundle(
+  canonicalScene: SceneDoc,
+  sourceUri: string,
+  rootNodeId: NodeId,
+  templateRoot: THREE.Group,
+): RuntimeSceneAssetBundle {
+  return {
+    canonicalScene,
+    sourceUri,
+    rootNodeId,
+    instantiate(): RuntimeSceneInstance {
+      // Clone geometry graph once per rebuild and fork materials so edits do not
+      // leak back into the reusable template.
+      const rootObject = cloneTemplateGroup(templateRoot)
+      const nodeObjects = new Map<NodeId, object>()
+      const materialObjects = new Map<string, object[]>()
+
+      rootObject.traverse((object) => {
+        const nodeId = object.userData.threeMotionNodeId as NodeId | undefined
+        if (nodeId) {
+          nodeObjects.set(nodeId, object)
+        }
+
+        if (object instanceof THREE.Mesh) {
+          const materials = Array.isArray(object.material) ? object.material : [object.material]
+          for (const material of materials) {
+            const materialId = material.userData.threeMotionMaterialId as string | undefined
+            if (!materialId) continue
+
+            const entries = materialObjects.get(materialId) ?? []
+            entries.push(material)
+            materialObjects.set(materialId, entries)
+          }
+        }
+      })
+
+      return {
+        rootNodeId,
+        rootObject,
+        nodeObjects,
+        materialObjects,
+      }
+    },
+  }
+}
+
+function cloneTemplateGroup(templateRoot: THREE.Group): THREE.Group {
+  const clone = templateRoot.clone(true)
+
+  clone.traverse((object) => {
+    if (object instanceof THREE.Mesh) {
+      if (Array.isArray(object.material)) {
+        object.material = object.material.map((material) => material.clone())
+      } else if (object.material) {
+        object.material = object.material.clone()
+      }
     }
   })
 
-  return { rootEid, meshEids, group }
+  return clone
 }
 
-/**
- * Centers a model on the origin and scales it to fit within a unit bounding box.
- */
+function tagMaterials(
+  materialLike: THREE.Material | THREE.Material[],
+  materialId: MaterialId,
+): void {
+  const materials = Array.isArray(materialLike) ? materialLike : [materialLike]
+  for (const material of materials) {
+    material.userData.threeMotionMaterialId = materialId
+  }
+}
+
+/** Normalizes imported content into the viewer's expected framing volume. */
 function centerAndNormalize(object: THREE.Object3D): void {
   const box = new THREE.Box3().setFromObject(object)
   const center = box.getCenter(new THREE.Vector3())
   const size = box.getSize(new THREE.Vector3())
 
-  // Center on origin
   object.position.sub(center)
 
-  // Scale to fit unit bounding box
   const maxDim = Math.max(size.x, size.y, size.z)
   if (maxDim > 0) {
     const scale = 1.5 / maxDim
     object.scale.multiplyScalar(scale)
   }
+}
+
+function vector3ToTuple(vector: THREE.Vector3): [number, number, number] {
+  return [vector.x, vector.y, vector.z]
+}
+
+function quaternionToTuple(quaternion: THREE.Quaternion): [number, number, number, number] {
+  return [quaternion.x, quaternion.y, quaternion.z, quaternion.w]
+}
+
+function colorToTuple(color: THREE.Color): [number, number, number] {
+  return [color.r, color.g, color.b]
+}
+
+function normalizeAssetPath(path: string): string {
+  return path
+    .replace(/\\/g, '/')
+    .replace(/^\.\/+/, '')
 }

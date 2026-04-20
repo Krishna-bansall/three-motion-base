@@ -1,8 +1,4 @@
-/**
- * Step 2: Post-Processing Pipeline
- * 
- * EffectComposer: RenderPass → UnrealBloomPass → CinematicShader → OutputPass
- */
+/** Owns the post-processing stack applied on top of the main scene render. */
 import * as THREE from 'three'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
@@ -29,7 +25,6 @@ export class PostProcessing {
   readonly composer: EffectComposer
   private bloomPass: UnrealBloomPass
   private cinematicPass: ShaderPass
-  private clock = new THREE.Clock()
 
   constructor(
     renderer: THREE.WebGLRenderer,
@@ -38,24 +33,18 @@ export class PostProcessing {
   ) {
     this.composer = new EffectComposer(renderer)
 
-    // 1. Render the scene
     const renderPass = new RenderPass(scene, camera)
     this.composer.addPass(renderPass)
 
-    // 2. Bloom — subtle glow
     const size = renderer.getSize(new THREE.Vector2())
     this.bloomPass = new UnrealBloomPass(size, 0.3, 0.6, 0.85)
     this.composer.addPass(this.bloomPass)
 
-    // 3. Cinematic — vignette + chromatic aberration + grain + color temp
     this.cinematicPass = new ShaderPass(CinematicShader)
     this.composer.addPass(this.cinematicPass)
 
-    // 4. Output — color space and tone mapping
     const outputPass = new OutputPass()
     this.composer.addPass(outputPass)
-
-    this.clock.start()
   }
 
   setBloom(strength: number, radius: number, threshold: number): void {
@@ -107,9 +96,8 @@ export class PostProcessing {
     this.composer.setSize(width, height)
   }
 
-  render(): void {
-    // Update grain animation time
-    this.cinematicPass.uniforms.grainTime.value = this.clock.getElapsedTime()
+  render(elapsedTime: number = 0): void {
+    this.cinematicPass.uniforms.grainTime.value = elapsedTime
     this.composer.render()
   }
 
