@@ -374,9 +374,8 @@ export class EngineAPI {
     publishLoading(true)
 
     try {
-      await this.clearModel()
-
       const model = await loader()
+      await this.clearModel()
       this.currentScene = cloneSceneDoc(model.canonicalScene)
       this.currentAssets = model.runtimeAssets
       this.runtime.setSceneAssets(model.runtimeAssets)
