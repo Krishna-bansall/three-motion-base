@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { exportPNG } from '../../renderer/exportPNG'
 import { ThreeRenderer } from '../../renderer/ThreeRenderer'
+import { cloneViewSettings, createDefaultViewSettings } from '../../viewSettings'
+import type { ViewSettings } from '../../viewSettings'
 import type { RuntimeAdapter } from '../RuntimeAdapter'
 import { getEnvironmentPreviews } from '../environment'
 import type {
@@ -9,32 +11,16 @@ import type {
   RuntimeSceneAssetBundle,
   TransformGizmoMode,
   TRS,
-  ViewSettings,
 } from '../types'
 import type { SceneDelta } from '../../scene/diff'
 import type { NodeId, SceneDoc, SceneNode } from '../../scene/types'
-
-const DEFAULT_VIEW_SETTINGS: ViewSettings = {
-  activeHDRI: 'studio',
-  exposure: 1,
-  bloom: { strength: 0.3, radius: 0.6, threshold: 0.85 },
-  cinematic: {
-    vignette: 0.35,
-    vignetteEnabled: true,
-    chromaticAberration: 0.003,
-    filmGrain: 0,
-    colorTemperature: 0,
-  },
-  autoRotate: false,
-  autoRotateSpeed: 0.3,
-}
 
 export class ThreeAdapter implements RuntimeAdapter {
   private renderer: ThreeRenderer | null = null
   private sceneAssets: RuntimeSceneAssetBundle | null = null
   private nodeObjects = new Map<NodeId, THREE.Object3D>()
   private materialObjects = new Map<string, THREE.Material[]>()
-  private viewSettings: ViewSettings = cloneViewSettings(DEFAULT_VIEW_SETTINGS)
+  private viewSettings: ViewSettings = createDefaultViewSettings()
   private runtimeTransformChanged: ((nodeId: NodeId, trs: TRS) => void) | null = null
   private transformInteractionStart: (() => void) | null = null
   private transformInteractionEnd: (() => void) | null = null
@@ -259,17 +245,6 @@ export class ThreeAdapter implements RuntimeAdapter {
       material.envMapIntensity = materialDef.envMapIntensity
       material.needsUpdate = true
     }
-  }
-}
-
-function cloneViewSettings(settings: ViewSettings): ViewSettings {
-  return {
-    activeHDRI: settings.activeHDRI,
-    exposure: settings.exposure,
-    bloom: { ...settings.bloom },
-    cinematic: { ...settings.cinematic },
-    autoRotate: settings.autoRotate,
-    autoRotateSpeed: settings.autoRotateSpeed,
   }
 }
 

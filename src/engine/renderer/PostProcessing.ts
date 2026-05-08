@@ -6,20 +6,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { CinematicShader } from './CinematicShader'
-
-export interface BloomSettings {
-  strength: number
-  radius: number
-  threshold: number
-}
-
-export interface CinematicSettings {
-  vignette: number
-  vignetteEnabled: boolean
-  chromaticAberration: number
-  filmGrain: number
-  colorTemperature: number
-}
+import type { BloomSettings, CinematicSettings } from '../viewSettings'
 
 export class PostProcessing {
   readonly composer: EffectComposer

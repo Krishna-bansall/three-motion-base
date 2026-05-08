@@ -1,7 +1,13 @@
 import { useEngineStore, type EntityInfo } from '../../store/useEngineStore'
-import type { BloomSettings, CinematicSettings } from '../renderer/PostProcessing'
-import type { HDRIPreset, RuntimeDebugGraph, TransformGizmoMode, ViewSettings } from '../runtime/types'
+import type { RuntimeDebugGraph, TransformGizmoMode } from '../runtime/types'
 import type { SceneDoc } from '../scene/types'
+import {
+  cloneViewSettings,
+  type BloomSettings,
+  type CinematicSettings,
+  type HDRIPreset,
+  type ViewSettings,
+} from '../viewSettings'
 
 export interface RuntimeStateGraph {
   history: {
@@ -52,24 +58,25 @@ export interface ConsoleStateParams {
 
 export function readViewSettingsFromStore(): ViewSettings {
   const state = useEngineStore.getState()
-  return {
+  return cloneViewSettings({
     activeHDRI: state.activeHDRI,
     exposure: state.exposure,
-    bloom: { ...state.bloom },
-    cinematic: { ...state.cinematic },
+    bloom: state.bloom,
+    cinematic: state.cinematic,
     autoRotate: state.autoRotate,
     autoRotateSpeed: state.autoRotateSpeed,
-  }
+  })
 }
 
 export function publishViewSettings(settings: ViewSettings): void {
   const store = useEngineStore.getState()
-  store.setActiveHDRI(settings.activeHDRI)
-  store.setExposure(settings.exposure)
-  store.setBloom({ ...settings.bloom })
-  store.setCinematic({ ...settings.cinematic })
-  store.setAutoRotate(settings.autoRotate)
-  store.setAutoRotateSpeed(settings.autoRotateSpeed)
+  const next = cloneViewSettings(settings)
+  store.setActiveHDRI(next.activeHDRI)
+  store.setExposure(next.exposure)
+  store.setBloom(next.bloom)
+  store.setCinematic(next.cinematic)
+  store.setAutoRotate(next.autoRotate)
+  store.setAutoRotateSpeed(next.autoRotateSpeed)
 }
 
 export function publishHistoryAvailability(canUndo: boolean, canRedo: boolean): void {

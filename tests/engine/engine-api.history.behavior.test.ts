@@ -5,6 +5,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { EngineAPI } from '../../src/engine/EngineAPI.ts'
 import { useEngineStore } from '../../src/store/useEngineStore.ts'
 import { cloneSceneDoc } from '../../src/engine/scene/snapshot.ts'
+import { cloneViewSettings, createDefaultViewSettings } from '../../src/engine/viewSettings.ts'
 import type { RuntimeAdapter } from '../../src/engine/runtime/RuntimeAdapter.ts'
 import type {
   EnvironmentPreview,
@@ -96,34 +97,6 @@ class FakeRuntime implements RuntimeAdapter {
 
   fireTransformEnd(): void {
     this.transformInteractionEnd?.()
-  }
-}
-
-function createDefaultViewSettings(): ViewSettings {
-  return {
-    activeHDRI: 'studio',
-    exposure: 1,
-    bloom: { strength: 0.3, radius: 0.6, threshold: 0.85 },
-    cinematic: {
-      vignette: 0.35,
-      vignetteEnabled: true,
-      chromaticAberration: 0.003,
-      filmGrain: 0,
-      colorTemperature: 0,
-    },
-    autoRotate: false,
-    autoRotateSpeed: 0.3,
-  }
-}
-
-function cloneViewSettings(settings: ViewSettings): ViewSettings {
-  return {
-    activeHDRI: settings.activeHDRI,
-    exposure: settings.exposure,
-    bloom: { ...settings.bloom },
-    cinematic: { ...settings.cinematic },
-    autoRotate: settings.autoRotate,
-    autoRotateSpeed: settings.autoRotateSpeed,
   }
 }
 
@@ -287,4 +260,58 @@ test('undo and redo restore view settings and rebuild runtime from history snaps
   assert.equal(useEngineStore.getState().autoRotate, false)
   assert.equal(runtime.buildCalls.length, initialBuildCount + 3)
   assert.equal(runtime.viewSettingsCalls.length, initialViewSettingsCalls + 5)
+})
+
+test('equivalent nested view settings updates do not create history or runtime writes', async () => {
+  const { engine, runtime } = await createLoadedEngine()
+  useEngineStore.setState({
+    bloom: { threshold: 0.85, radius: 0.6, strength: 0.3 },
+  })
+  const initialViewSettingsCalls = runtime.viewSettingsCalls.length
+
+  engine.setBloom(0.3, 0.6, 0.85)
+
+  assert.equal(runtime.viewSettingsCalls.length, initialViewSettingsCalls)
+  assert.equal(engine.getRuntimeStateGraph().history.undoDepth, 0)
+  assert.deepEqual(useEngineStore.getState().bloom, {
+    threshold: 0.85,
+    radius: 0.6,
+    strength: 0.3,
+  })
+})
+
+test('filter reset restores shared defaults and batches one history entry', async () => {
+  const { engine } = await createLoadedEngine()
+  const defaults = createDefaultViewSettings()
+
+  engine.setExposure(1.7)
+  engine.setAutoRotate(true)
+  engine.setBloom(1.1, 0.2, 0.4)
+  engine.setVignetteEnabled(false)
+  engine.setVignette(0.8)
+  engine.setFilmGrain(0.09)
+  engine.setChromaticAberration(0.012)
+  engine.setColorTemperature(-0.45)
+  const undoDepthBeforeReset = engine.getRuntimeStateGraph().history.undoDepth
+
+  engine.resetFilters()
+
+  assert.equal(useEngineStore.getState().exposure, 1.7)
+  assert.equal(useEngineStore.getState().autoRotate, true)
+  assert.deepEqual(useEngineStore.getState().bloom, defaults.bloom)
+  assert.deepEqual(useEngineStore.getState().cinematic, defaults.cinematic)
+  assert.equal(engine.getRuntimeStateGraph().history.undoDepth, undoDepthBeforeReset + 1)
+
+  await engine.undo()
+
+  assert.deepEqual(useEngineStore.getState().bloom, {
+    strength: 1.1,
+    radius: 0.2,
+    threshold: 0.4,
+  })
+  assert.equal(useEngineStore.getState().cinematic.vignetteEnabled, false)
+  assert.equal(useEngineStore.getState().cinematic.vignette, 0.8)
+  assert.equal(useEngineStore.getState().cinematic.filmGrain, 0.09)
+  assert.equal(useEngineStore.getState().cinematic.chromaticAberration, 0.012)
+  assert.equal(useEngineStore.getState().cinematic.colorTemperature, -0.45)
 })

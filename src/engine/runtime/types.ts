@@ -1,7 +1,7 @@
-import type { BloomSettings, CinematicSettings } from '../renderer/PostProcessing'
 import type { NodeId, Quat, SceneDoc, Vec3 } from '../scene/types'
+import type { HDRIPreset } from '../viewSettings'
 
-export type HDRIPreset = 'studio' | 'moody' | 'daylight'
+export type { HDRIPreset, ViewSettings } from '../viewSettings'
 export type TransformGizmoMode = 'translate' | 'rotate' | 'scale'
 
 /** Shared transform shape passed between the engine and runtime adapters. */
@@ -9,16 +9,6 @@ export interface TRS {
   t: Vec3
   r: Quat
   s: Vec3
-}
-
-/** View-related state owned by the runtime adapter. */
-export interface ViewSettings {
-  activeHDRI: HDRIPreset
-  exposure: number
-  bloom: BloomSettings
-  cinematic: CinematicSettings
-  autoRotate: boolean
-  autoRotateSpeed: number
 }
 
 /** UI-ready environment card metadata exposed by the runtime layer. */
