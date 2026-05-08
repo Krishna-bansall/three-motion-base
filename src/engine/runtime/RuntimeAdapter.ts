@@ -1,13 +1,13 @@
-import type { SceneDelta } from '../scene/diff'
-import type { NodeId, SceneDoc } from '../scene/types'
+import type { SceneDelta } from '../scene/diff.ts'
+import type { NodeId, SceneDoc } from '../scene/types.ts'
+import type { ViewSettings } from '../viewSettings.ts'
 import type {
   EnvironmentPreview,
   RuntimeDebugGraph,
   RuntimeSceneAssetBundle,
   TRS,
   TransformGizmoMode,
-  ViewSettings,
-} from './types'
+} from './types.ts'
 
 /** Adapter boundary between the canonical engine model and a concrete runtime. */
 export interface RuntimeAdapter {

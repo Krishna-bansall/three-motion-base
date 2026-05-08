@@ -5,6 +5,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { EngineAPI } from '../../src/engine/EngineAPI.ts'
 import { useEngineStore } from '../../src/store/useEngineStore.ts'
 import { cloneSceneDoc, createEmptySceneDoc } from '../../src/engine/scene/snapshot.ts'
+import { cloneViewSettings, createDefaultViewSettings } from '../../src/engine/viewSettings.ts'
 import type { RuntimeAdapter } from '../../src/engine/runtime/RuntimeAdapter.ts'
 import type {
   EnvironmentPreview,
@@ -90,23 +91,6 @@ class FakeRuntime implements RuntimeAdapter {
   }
 }
 
-function createDefaultViewSettings(): ViewSettings {
-  return {
-    activeHDRI: 'studio',
-    exposure: 1,
-    bloom: { strength: 0.3, radius: 0.6, threshold: 0.85 },
-    cinematic: {
-      vignette: 0.35,
-      vignetteEnabled: true,
-      chromaticAberration: 0.003,
-      filmGrain: 0,
-      colorTemperature: 0,
-    },
-    autoRotate: false,
-    autoRotateSpeed: 0.3,
-  }
-}
-
 function resetStore(): void {
   useEngineStore.setState({
     isLoading: false,
@@ -177,17 +161,6 @@ function withMockedBlobUrls(
     URL.createObjectURL = originalCreateObjectURL
     URL.revokeObjectURL = originalRevokeObjectURL
   })
-}
-
-function cloneViewSettings(settings: ViewSettings): ViewSettings {
-  return {
-    activeHDRI: settings.activeHDRI,
-    exposure: settings.exposure,
-    bloom: { ...settings.bloom },
-    cinematic: { ...settings.cinematic },
-    autoRotate: settings.autoRotate,
-    autoRotateSpeed: settings.autoRotateSpeed,
-  }
 }
 
 function createMountedEngine(): { engine: EngineAPI; runtime: FakeRuntime } {

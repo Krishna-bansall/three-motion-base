@@ -5,8 +5,12 @@
  * React never touches Three.js objects — only reads from this store.
  */
 import { create } from 'zustand'
-import type { BloomSettings, CinematicSettings } from '../engine/renderer/PostProcessing'
-import type { HDRIPreset } from '../engine/runtime/types'
+import {
+  createDefaultViewSettings,
+  type BloomSettings,
+  type CinematicSettings,
+  type HDRIPreset,
+} from '../engine/viewSettings'
 
 export interface EntityInfo {
   nodeId: string
@@ -60,20 +64,7 @@ export const useEngineStore = create<EngineState>((set) => ({
   canUndo: false,
   canRedo: false,
 
-  activeHDRI: 'studio',
-  exposure: 1.0,
-
-  bloom: { strength: 0.3, radius: 0.6, threshold: 0.85 },
-  cinematic: {
-    vignette: 0.35,
-    vignetteEnabled: true,
-    chromaticAberration: 0.003,
-    filmGrain: 0.0,
-    colorTemperature: 0.0,
-  },
-
-  autoRotate: false,
-  autoRotateSpeed: 0.3,
+  ...createDefaultViewSettings(),
 
   setLoading: (v) => set({ isLoading: v }),
   setEntities: (e) => set({ entities: e }),

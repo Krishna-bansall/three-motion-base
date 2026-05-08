@@ -1,5 +1,5 @@
-import type { ViewSettings } from '../runtime/types'
 import type { SceneDoc } from '../scene/types'
+import type { ViewSettings } from '../viewSettings'
 
 export interface EngineSnapshot {
   scene: SceneDoc | null

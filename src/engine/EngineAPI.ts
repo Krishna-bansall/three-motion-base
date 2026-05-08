@@ -31,6 +31,11 @@ import {
   readViewSettingsFromStore,
   type RuntimeStateGraph,
 } from './store/engineStateBridge'
+import {
+  areViewSettingsEqual,
+  createDefaultViewSettings,
+  updateViewSettings as updateSharedViewSettings,
+} from './viewSettings'
 
 export interface ThreeMotionConsoleAPI {
   help: () => string[]
@@ -150,6 +155,16 @@ export class EngineAPI {
   setColorTemperature(temperature: number): void {
     this.updateViewSettings((next) => {
       next.cinematic.colorTemperature = temperature
+    })
+  }
+
+  resetFilters(): void {
+    const defaults = createDefaultViewSettings()
+    this.runHistoryBatch(() => {
+      this.updateViewSettings((next) => {
+        next.bloom = { ...defaults.bloom }
+        next.cinematic = { ...defaults.cinematic }
+      })
     })
   }
 
@@ -417,11 +432,10 @@ export class EngineAPI {
   }
 
   private updateViewSettings(mutator: (next: EngineSnapshot['viewSettings']) => void): void {
-    const next = readViewSettingsFromStore()
-    const before = JSON.stringify(next)
-    mutator(next)
+    const previous = readViewSettingsFromStore()
+    const next = updateSharedViewSettings(previous, mutator)
 
-    if (before === JSON.stringify(next)) return
+    if (areViewSettingsEqual(previous, next)) return
 
     publishViewSettings(next)
     void this.runtime.setViewSettings(next)
@@ -498,7 +512,10 @@ export class EngineAPI {
   }
 
   private areSnapshotsEqual(a: EngineSnapshot, b: EngineSnapshot): boolean {
-    return JSON.stringify(a) === JSON.stringify(b)
+    return (
+      JSON.stringify(a.scene) === JSON.stringify(b.scene)
+      && areViewSettingsEqual(a.viewSettings, b.viewSettings)
+    )
   }
 
   private canUndo(): boolean {
