@@ -14,6 +14,7 @@ import {
 } from '../../src/engine/store/engineStateBridge.ts'
 import { setNodeMaterial, setNodeVisible, patchMaterial, setNodeTRS } from '../../src/engine/scene/mutations.ts'
 import { useEngineStore } from '../../src/store/useEngineStore.ts'
+import { createDefaultViewSettings } from '../../src/engine/viewSettings.ts'
 import type { RuntimeSceneAssetBundle, RuntimeSceneInstance, ViewSettings } from '../../src/engine/runtime/types.ts'
 import type { SceneDoc } from '../../src/engine/scene/types.ts'
 
@@ -78,32 +79,16 @@ function createRuntimeAssets(): RuntimeSceneAssetBundle {
 }
 
 function createViewSettings(overrides: Partial<ViewSettings> = {}): ViewSettings {
+  const defaults = createDefaultViewSettings()
   return {
-    activeHDRI: 'studio',
-    exposure: 1,
-    bloom: { strength: 0.3, radius: 0.6, threshold: 0.85 },
-    cinematic: {
-      vignette: 0.35,
-      vignetteEnabled: true,
-      chromaticAberration: 0.003,
-      filmGrain: 0,
-      colorTemperature: 0,
-    },
-    autoRotate: false,
-    autoRotateSpeed: 0.3,
+    ...defaults,
     ...overrides,
     bloom: {
-      strength: 0.3,
-      radius: 0.6,
-      threshold: 0.85,
+      ...defaults.bloom,
       ...overrides.bloom,
     },
     cinematic: {
-      vignette: 0.35,
-      vignetteEnabled: true,
-      chromaticAberration: 0.003,
-      filmGrain: 0,
-      colorTemperature: 0,
+      ...defaults.cinematic,
       ...overrides.cinematic,
     },
   }
@@ -172,18 +157,8 @@ function resetStore(): void {
     hasModel: false,
     canUndo: false,
     canRedo: false,
-    activeHDRI: 'studio',
-    exposure: 1,
-    bloom: { strength: 0.3, radius: 0.6, threshold: 0.85 },
-    cinematic: {
-      vignette: 0.35,
-      vignetteEnabled: true,
-      chromaticAberration: 0.003,
-      filmGrain: 0,
-      colorTemperature: 0,
-    },
-    autoRotate: false,
-    autoRotateSpeed: 0.3,
+    trackedObjectTransform: null,
+    ...createDefaultViewSettings(),
   })
 }
 
@@ -356,6 +331,7 @@ test('environment previews and store bridge expose stable UI-ready state', () =>
   assert.deepEqual(viewSettings.activeHDRI, 'moody')
   assert.equal((sceneSnapshot as { hasCanonicalScene: boolean }).hasCanonicalScene, true)
   assert.equal((sceneSnapshot as { transformMode: string }).transformMode, 'scale')
+  assert.equal((sceneSnapshot as { trackedObjectTransform: null }).trackedObjectTransform, null)
   assert.equal((consoleState as { history: { undoDepth: number } }).history.undoDepth, 2)
   assert.equal((consoleState as { pathTracingReadiness: { warnings: unknown[] } }).pathTracingReadiness.warnings.length, 0)
 })

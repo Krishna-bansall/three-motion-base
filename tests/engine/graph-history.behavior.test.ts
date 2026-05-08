@@ -5,6 +5,7 @@ import { diffSceneDocs, isSceneDeltaEmpty } from '../../src/engine/scene/diff.ts
 import { cloneSceneDoc, createEmptySceneDoc } from '../../src/engine/scene/snapshot.ts'
 import { patchMaterial } from '../../src/engine/scene/mutations.ts'
 import { useEngineStore } from '../../src/store/useEngineStore.ts'
+import { cloneViewSettings, createDefaultViewSettings } from '../../src/engine/viewSettings.ts'
 import type { RuntimeAdapter } from '../../src/engine/runtime/RuntimeAdapter.ts'
 import type {
   EnvironmentPreview,
@@ -21,20 +22,7 @@ class FakeRuntime implements RuntimeAdapter {
   public buildCalls: SceneDoc[] = []
   public dirtyCalls: Array<{ scene: SceneDoc }> = []
   public transformMode: TransformGizmoMode | null = null
-  public viewSettings: ViewSettings = {
-    activeHDRI: 'studio',
-    exposure: 1,
-    bloom: { strength: 0.3, radius: 0.6, threshold: 0.85 },
-    cinematic: {
-      vignette: 0.35,
-      vignetteEnabled: true,
-      chromaticAberration: 0.003,
-      filmGrain: 0,
-      colorTemperature: 0,
-    },
-    autoRotate: false,
-    autoRotateSpeed: 0.3,
-  }
+  public viewSettings: ViewSettings = createDefaultViewSettings()
   private transformChangedCb: ((nodeId: NodeId, trs: TRS) => void) | null = null
   private transformStartCb: (() => void) | null = null
   private transformEndCb: (() => void) | null = null
@@ -55,25 +43,11 @@ class FakeRuntime implements RuntimeAdapter {
   }
 
   async setViewSettings(settings: ViewSettings): Promise<void> {
-    this.viewSettings = {
-      activeHDRI: settings.activeHDRI,
-      exposure: settings.exposure,
-      bloom: { ...settings.bloom },
-      cinematic: { ...settings.cinematic },
-      autoRotate: settings.autoRotate,
-      autoRotateSpeed: settings.autoRotateSpeed,
-    }
+    this.viewSettings = cloneViewSettings(settings)
   }
 
   getViewSettings(): ViewSettings {
-    return {
-      activeHDRI: this.viewSettings.activeHDRI,
-      exposure: this.viewSettings.exposure,
-      bloom: { ...this.viewSettings.bloom },
-      cinematic: { ...this.viewSettings.cinematic },
-      autoRotate: this.viewSettings.autoRotate,
-      autoRotateSpeed: this.viewSettings.autoRotateSpeed,
-    }
+    return cloneViewSettings(this.viewSettings)
   }
 
   setTransformToolMode(mode: TransformGizmoMode | null): void {
@@ -116,18 +90,8 @@ function resetStore(): void {
     hasModel: false,
     canUndo: false,
     canRedo: false,
-    activeHDRI: 'studio',
-    exposure: 1.0,
-    bloom: { strength: 0.3, radius: 0.6, threshold: 0.85 },
-    cinematic: {
-      vignette: 0.35,
-      vignetteEnabled: true,
-      chromaticAberration: 0.003,
-      filmGrain: 0.0,
-      colorTemperature: 0.0,
-    },
-    autoRotate: false,
-    autoRotateSpeed: 0.3,
+    trackedObjectTransform: null,
+    ...createDefaultViewSettings(),
   })
 }
 

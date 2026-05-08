@@ -98,6 +98,7 @@ function resetStore(): void {
     hasModel: false,
     canUndo: false,
     canRedo: false,
+    trackedObjectTransform: null,
     ...createDefaultViewSettings(),
   })
 }
@@ -242,6 +243,7 @@ test('loadModel loads a scene, clears runtime first, and publishes canonical ent
   assert.equal(useEngineStore.getState().hasModel, true)
   assert.equal(useEngineStore.getState().entities.length, 1)
   assert.equal(useEngineStore.getState().entities[0]?.name, 'sample-root-mesh')
+  assert.deepEqual(useEngineStore.getState().trackedObjectTransform?.position, [0, 0, 0])
   assert.equal(runtime.sceneAssetsHistory.length, 2)
   assert.equal(runtime.sceneAssetsHistory[0], null)
   assert.ok(runtime.sceneAssetsHistory[1], 'loaded assets should be stored on the runtime')
@@ -273,6 +275,7 @@ test('loadModelFromFile uses the shared load path and revokes its blob URL', asy
 
   assert.equal(useEngineStore.getState().hasModel, true)
   assert.equal(useEngineStore.getState().entities[0]?.name, 'file-root-mesh')
+  assert.deepEqual(useEngineStore.getState().trackedObjectTransform?.position, [0, 0, 0])
 })
 
 test('loadModelFromFiles uses the shared load path and revokes every blob URL', async () => {
@@ -299,6 +302,7 @@ test('loadModelFromFiles uses the shared load path and revokes every blob URL', 
 
   assert.equal(useEngineStore.getState().hasModel, true)
   assert.equal(useEngineStore.getState().entities[0]?.name, 'files-root-mesh')
+  assert.deepEqual(useEngineStore.getState().trackedObjectTransform?.position, [0, 0, 0])
 })
 
 test('failed replacement load keeps the previous scene active and clears loading state', async () => {
@@ -354,6 +358,7 @@ test('failed initial load leaves the engine empty and clears loading state', asy
   assert.equal(useEngineStore.getState().isLoading, false)
   assert.equal(useEngineStore.getState().hasModel, false)
   assert.deepEqual(useEngineStore.getState().entities, [])
+  assert.equal(useEngineStore.getState().trackedObjectTransform, null)
   assert.equal(engine.getCanonicalSceneSnapshot(), null)
   assert.equal(runtime.buildCalls.length, 0)
 })

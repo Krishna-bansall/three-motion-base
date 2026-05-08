@@ -1,6 +1,7 @@
-import { useEngineStore, type EntityInfo } from '../../store/useEngineStore'
+import { useEngineStore, type EntityInfo, type TrackedObjectTransform } from '../../store/useEngineStore'
 import type { RuntimeDebugGraph, TransformGizmoMode } from '../runtime/types'
 import type { SceneDoc } from '../scene/types'
+import { quaternionToEulerXYZ, radiansToDegrees } from '../scene/transformMath'
 import {
   cloneViewSettings,
   type BloomSettings,
@@ -28,6 +29,7 @@ export interface RuntimeStateGraph {
     autoRotate: boolean
     autoRotateSpeed: number
     transformMode: TransformGizmoMode | null
+    trackedObjectTransform: TrackedObjectTransform | null
   }
   root: RuntimeDebugGraph['root']
   meshes: RuntimeDebugGraph['meshes']
@@ -91,6 +93,10 @@ export function publishLoading(isLoading: boolean): void {
   useEngineStore.getState().setLoading(isLoading)
 }
 
+export function publishTrackedObjectTransform(scene: SceneDoc | null): void {
+  useEngineStore.getState().setTrackedObjectTransform(buildTrackedObjectTransform(scene))
+}
+
 export function publishEntities(scene: SceneDoc | null): void {
   if (!scene) {
     useEngineStore.getState().setEntities([])
@@ -134,6 +140,7 @@ export function buildSceneSnapshot(
     canUndo: state.canUndo,
     canRedo: state.canRedo,
     transformMode,
+    trackedObjectTransform: state.trackedObjectTransform,
   }
 }
 
@@ -158,6 +165,7 @@ export function buildRuntimeStateGraph(params: RuntimeStateGraphParams): Runtime
       autoRotate: state.autoRotate,
       autoRotateSpeed: state.autoRotateSpeed,
       transformMode: params.transformMode,
+      trackedObjectTransform: state.trackedObjectTransform,
     },
     root: params.runtimeGraph.root,
     meshes: params.runtimeGraph.meshes,
@@ -180,6 +188,7 @@ export function buildConsoleState(params: ConsoleStateParams): object {
     },
     transformMode: params.transformMode,
     entities: state.entities,
+    trackedObjectTransform: state.trackedObjectTransform,
     activeHDRI: state.activeHDRI,
     exposure: state.exposure,
     bloom: state.bloom,
@@ -188,4 +197,34 @@ export function buildConsoleState(params: ConsoleStateParams): object {
     autoRotateSpeed: state.autoRotateSpeed,
     pathTracingReadiness: params.pathTracingReadiness,
   }
+}
+
+function buildTrackedObjectTransform(scene: SceneDoc | null): TrackedObjectTransform | null {
+  if (!scene) {
+    return null
+  }
+
+  const rootNodeId = scene.roots[0]
+  if (!rootNodeId) {
+    return null
+  }
+
+  const rootNode = scene.nodes[rootNodeId]
+  if (!rootNode) {
+    return null
+  }
+
+  const [rx, ry, rz] = quaternionToEulerXYZ(rootNode.r)
+  const [px, py, pz] = rootNode.t
+
+  return {
+    position: rootNode.t.map(round3) as TrackedObjectTransform['position'],
+    rotation: [rx, ry, rz].map((value) => round3(radiansToDegrees(value))) as TrackedObjectTransform['rotation'],
+    scale: rootNode.s.map(round3) as TrackedObjectTransform['scale'],
+    distanceFromOrigin: round3(Math.hypot(px, py, pz)),
+  }
+}
+
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000
 }

@@ -24,6 +24,13 @@ export interface EntityInfo {
   b: number
 }
 
+export interface TrackedObjectTransform {
+  position: [number, number, number]
+  rotation: [number, number, number]
+  scale: [number, number, number]
+  distanceFromOrigin: number
+}
+
 export interface EngineState {
   // ── Model ──
   isLoading: boolean
@@ -31,6 +38,7 @@ export interface EngineState {
   hasModel: boolean
   canUndo: boolean
   canRedo: boolean
+  trackedObjectTransform: TrackedObjectTransform | null
 
   // ── Lighting ──
   activeHDRI: HDRIPreset
@@ -49,6 +57,7 @@ export interface EngineState {
   setEntities: (e: EntityInfo[]) => void
   setHasModel: (v: boolean) => void
   setHistoryAvailability: (history: { canUndo: boolean; canRedo: boolean }) => void
+  setTrackedObjectTransform: (transform: TrackedObjectTransform | null) => void
   setActiveHDRI: (h: HDRIPreset) => void
   setExposure: (v: number) => void
   setBloom: (b: BloomSettings) => void
@@ -63,6 +72,7 @@ export const useEngineStore = create<EngineState>((set) => ({
   hasModel: false,
   canUndo: false,
   canRedo: false,
+  trackedObjectTransform: null,
 
   ...createDefaultViewSettings(),
 
@@ -70,6 +80,7 @@ export const useEngineStore = create<EngineState>((set) => ({
   setEntities: (e) => set({ entities: e }),
   setHasModel: (v) => set({ hasModel: v }),
   setHistoryAvailability: ({ canUndo, canRedo }) => set({ canUndo, canRedo }),
+  setTrackedObjectTransform: (transform) => set({ trackedObjectTransform: transform }),
   setActiveHDRI: (h) => set({ activeHDRI: h }),
   setExposure: (v) => set({ exposure: v }),
   setBloom: (b) => set({ bloom: b }),

@@ -27,13 +27,16 @@ class FakeRuntime implements RuntimeAdapter {
 
   mount(): void {}
   unmount(): void {}
-  setSceneAssets(_: RuntimeSceneAssetBundle | null): void {}
+  setSceneAssets(assets: RuntimeSceneAssetBundle | null): void {
+    void assets
+  }
 
   async buildFromCanonical(scene: SceneDoc): Promise<void> {
     this.buildCalls.push(cloneSceneDoc(scene))
   }
 
-  async applyDirty(_: unknown, scene: SceneDoc): Promise<void> {
+  async applyDirty(delta: unknown, scene: SceneDoc): Promise<void> {
+    void delta
     this.applyDirtyCalls.push(cloneSceneDoc(scene))
   }
 
@@ -45,7 +48,9 @@ class FakeRuntime implements RuntimeAdapter {
     return cloneViewSettings(this.viewSettingsCalls.at(-1) ?? createDefaultViewSettings())
   }
 
-  setTransformToolMode(_: TransformGizmoMode | null): void {}
+  setTransformToolMode(mode: TransformGizmoMode | null): void {
+    void mode
+  }
   getTransformToolMode(): TransformGizmoMode | null { return null }
 
   onRuntimeTransformChanged(cb: ((nodeId: NodeId, trs: TRS) => void) | null): void {
@@ -107,6 +112,7 @@ function resetStore(): void {
     hasModel: false,
     canUndo: false,
     canRedo: false,
+    trackedObjectTransform: null,
     ...createDefaultViewSettings(),
   })
 }
@@ -225,11 +231,14 @@ test('transform interaction creates a single undo step for a gesture', async () 
   runtime.fireTransformEnd()
 
   assert.deepEqual(engine.getCanonicalSceneSnapshot()?.nodes['node-0']?.t, [6, 7, 8])
+  assert.deepEqual(useEngineStore.getState().trackedObjectTransform?.position, [6, 7, 8])
+  assert.equal(useEngineStore.getState().trackedObjectTransform?.distanceFromOrigin, 12.207)
   assert.equal(engine.getRuntimeStateGraph().history.undoDepth, 1)
 
   await engine.undo()
 
   assert.deepEqual(engine.getCanonicalSceneSnapshot()?.nodes['node-0']?.t, originalScene.nodes['node-0']?.t)
+  assert.deepEqual(useEngineStore.getState().trackedObjectTransform?.position, [0, 0, 0])
 })
 
 test('undo and redo restore view settings and rebuild runtime from history snapshots', async () => {
