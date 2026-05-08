@@ -22,7 +22,7 @@ export interface RuntimeAdapter {
   /** Unmounts the runtime and releases resources. */
   unmount(): void
 
-  /** Stores model assets for later rebuilds. */
+  /** Stores model assets or adapter-facing source data for later rebuilds. */
   setSceneAssets(assets: RuntimeSceneAssetBundle | null): void
   /** Builds the runtime scene from canonical data. */
   buildFromCanonical(scene: SceneDoc): Promise<void>

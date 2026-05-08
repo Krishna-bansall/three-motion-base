@@ -78,6 +78,34 @@ function createRuntimeAssets(): RuntimeSceneAssetBundle {
   }
 }
 
+function createRuntimeSourceAssets(): RuntimeSceneAssetBundle {
+  const templateRoot = new THREE.Group()
+  templateRoot.name = 'ProductRoot'
+
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial({
+      color: new THREE.Color(1, 0, 0),
+      roughness: 0.4,
+      metalness: 0.1,
+    }),
+  )
+  mesh.name = 'MeshNode'
+  templateRoot.add(mesh)
+
+  return {
+    canonicalScene: createScene(),
+    sourceUri: 'sample.glb',
+    rootNodeId: 'node-root',
+    source: {
+      templateRoot,
+    },
+    instantiate(): RuntimeSceneInstance {
+      throw new Error('legacy runtime asset instantiation should not be used')
+    },
+  }
+}
+
 function createViewSettings(overrides: Partial<ViewSettings> = {}): ViewSettings {
   const defaults = createDefaultViewSettings()
   return {
@@ -176,6 +204,65 @@ test('ThreeAdapter.buildFromCanonical clears previous runtime children before re
 
   assert.equal(runtime.productRoot.children.length, 1)
   assert.equal((runtime.productRoot.children[0] as THREE.Mesh).name, 'MeshNode')
+})
+
+test('ThreeAdapter builds from adapter-owned source data and keeps material clones isolated across rebuilds', async () => {
+  const adapter = new ThreeAdapter()
+  const runtime = attachFakeRenderer(adapter)
+
+  adapter.setSceneAssets(createRuntimeSourceAssets())
+  await adapter.buildFromCanonical(createScene())
+
+  const firstMesh = runtime.productRoot.children[0] as THREE.Mesh
+  const firstMaterial = firstMesh.material as THREE.MeshStandardMaterial
+
+  assert.equal(firstMesh.userData.threeMotionNodeId, 'node-mesh')
+  assert.equal(firstMaterial.userData.threeMotionMaterialId, 'material-0')
+  assert.equal(firstMaterial.roughness, 0.4)
+
+  firstMaterial.roughness = 0.95
+  await adapter.buildFromCanonical(createScene())
+
+  const secondMesh = runtime.productRoot.children[0] as THREE.Mesh
+  const secondMaterial = secondMesh.material as THREE.MeshStandardMaterial
+
+  assert.notEqual(secondMesh, firstMesh)
+  assert.notEqual(secondMaterial, firstMaterial)
+  assert.equal(secondMesh.userData.threeMotionNodeId, 'node-mesh')
+  assert.equal(secondMaterial.userData.threeMotionMaterialId, 'material-0')
+  assert.equal(secondMaterial.roughness, 0.4)
+})
+
+test('ThreeAdapter.applyDirty patches transforms and materials without rebuilding runtime children', async () => {
+  const adapter = new ThreeAdapter()
+  const runtime = attachFakeRenderer(adapter)
+  const originalScene = createScene()
+
+  adapter.setSceneAssets(createRuntimeSourceAssets())
+  await adapter.buildFromCanonical(originalScene)
+
+  const firstMesh = runtime.productRoot.children[0] as THREE.Mesh
+  const firstMaterial = firstMesh.material as THREE.MeshStandardMaterial
+  const editedScene = cloneSceneDoc(originalScene)
+
+  setNodeTRS(editedScene, 'node-mesh', {
+    t: [4, 5, 6],
+    r: [0, 0, 0, 1],
+    s: [1, 2, 1],
+  })
+  patchMaterial(editedScene, 'material-0', {
+    roughness: 0.8,
+    metalness: 0.2,
+    envMapIntensity: 1.4,
+  })
+
+  await adapter.applyDirty(diffSceneDocs(originalScene, editedScene), editedScene)
+
+  assert.equal(runtime.productRoot.children[0], firstMesh)
+  assert.deepEqual(firstMesh.position.toArray(), [4, 5, 6])
+  assert.equal(firstMaterial.roughness, 0.8)
+  assert.equal(firstMaterial.metalness, 0.2)
+  assert.equal(firstMaterial.envMapIntensity, 1.4)
 })
 
 test('ThreeAdapter.setViewSettings loads HDRI only when preset changes and pushes renderer settings', async () => {

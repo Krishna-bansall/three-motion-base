@@ -39,6 +39,13 @@ export interface RuntimeSceneAssetBundle {
   sourceUri: string
   rootNodeId: NodeId
   instantiate(): RuntimeSceneInstance
+  source?: RuntimeSceneSource
+}
+
+/** Adapter-facing source data for a Three runtime rebuild. */
+export interface RuntimeSceneSource {
+  rootNodeId?: NodeId
+  templateRoot: object
 }
 
 /** Materialized runtime objects created from a scene asset bundle. */
