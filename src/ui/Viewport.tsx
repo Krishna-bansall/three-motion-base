@@ -29,6 +29,7 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
   const isLoading = useEngineStore((s) => s.isLoading)
   const canUndo = useEngineStore((s) => s.canUndo)
   const canRedo = useEngineStore((s) => s.canRedo)
+  const trackedObjectTransform = useEngineStore((s) => s.trackedObjectTransform)
   const hasInitialized = useRef(false)
   const [transformMode, setTransformMode] = useState<TransformGizmoMode | null>('rotate')
   const [toast, setToast] = useState<HistoryToast | null>(null)
@@ -156,6 +157,28 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
   return (
     <div id="viewport-wrapper" className="viewport-wrapper">
       <div ref={containerRef} className="viewport-canvas" />
+      {trackedObjectTransform && (
+        <div className="viewport-transform-card" role="status" aria-live="polite">
+          <div className="viewport-transform-header">
+            <span>Object / World Origin</span>
+            <strong>{trackedObjectTransform.distanceFromOrigin.toFixed(3)}m</strong>
+          </div>
+          <dl className="viewport-transform-grid">
+            <div>
+              <dt>Position</dt>
+              <dd>{formatVector(trackedObjectTransform.position)}</dd>
+            </div>
+            <div>
+              <dt>Rotation</dt>
+              <dd>{formatVector(trackedObjectTransform.rotation)}°</dd>
+            </div>
+            <div>
+              <dt>Scale</dt>
+              <dd>{formatVector(trackedObjectTransform.scale)}</dd>
+            </div>
+          </dl>
+        </div>
+      )}
       <div className="viewport-history-toolbar">
         <button
           className="viewport-history-btn"
@@ -226,4 +249,8 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
       )}
     </div>
   )
+}
+
+function formatVector(values: [number, number, number]): string {
+  return values.map((value) => value.toFixed(3)).join(', ')
 }

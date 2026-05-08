@@ -7,6 +7,8 @@ import { TurntableController } from './TurntableController'
 import { HDRI_PATHS } from '../runtime/environment'
 import type { HDRIPreset, TransformGizmoMode } from '../runtime/types'
 
+const GROUND_Y = -0.76
+
 export class ThreeRenderer {
   readonly renderer: THREE.WebGLRenderer
   readonly scene: THREE.Scene
@@ -32,6 +34,8 @@ export class ThreeRenderer {
   private transformMode: TransformGizmoMode | null = null
   private activeEnvironmentMap: THREE.Texture | null = null
   private hdriLoadToken = 0
+  private readonly groundPlane: THREE.Mesh
+  private readonly originMarker: THREE.Group
 
   constructor() {
     this.renderer = new THREE.WebGLRenderer({
@@ -46,6 +50,10 @@ export class ThreeRenderer {
 
     this.scene = new THREE.Scene()
     this.scene.add(this.productRoot)
+    this.groundPlane = createGroundPlane()
+    this.originMarker = createOriginMarker()
+    this.scene.add(this.groundPlane)
+    this.scene.add(this.originMarker)
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100)
     this.camera.position.set(0, 0.5, 3)
@@ -101,6 +109,8 @@ export class ThreeRenderer {
     this.transformControls.detach()
     this.transformControls.dispose()
     this.disposeEnvironmentMap()
+    disposeObject3D(this.groundPlane)
+    disposeObject3D(this.originMarker)
     this.scene.environment = null
     this.scene.background = null
     this.renderer.domElement.remove()
@@ -202,4 +212,64 @@ export class ThreeRenderer {
     this.activeEnvironmentMap?.dispose()
     this.activeEnvironmentMap = null
   }
+}
+
+function createGroundPlane(): THREE.Mesh {
+  const plane = new THREE.Mesh(
+    new THREE.CircleGeometry(7.5, 96),
+    new THREE.MeshStandardMaterial({
+      color: new THREE.Color('#242433'),
+      roughness: 0.96,
+      metalness: 0.02,
+      transparent: true,
+      opacity: 0.92,
+    }),
+  )
+  plane.rotation.x = -Math.PI / 2
+  plane.position.y = GROUND_Y
+  plane.renderOrder = -1
+  return plane
+}
+
+function createOriginMarker(): THREE.Group {
+  const marker = new THREE.Group()
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.075, 0.1, 48),
+    new THREE.MeshBasicMaterial({
+      color: new THREE.Color('#7c6aff'),
+      transparent: true,
+      opacity: 0.92,
+      side: THREE.DoubleSide,
+    }),
+  )
+  ring.rotation.x = -Math.PI / 2
+
+  const verticalAxis = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, -0.1, 0),
+      new THREE.Vector3(0, 0.22, 0),
+    ]),
+    new THREE.LineBasicMaterial({ color: new THREE.Color('#f7f4ff'), transparent: true, opacity: 0.85 }),
+  )
+
+  marker.add(ring)
+  marker.add(verticalAxis)
+  return marker
+}
+
+function disposeObject3D(object: THREE.Object3D): void {
+  object.traverse((entry) => {
+    const mesh = entry as THREE.Mesh
+    mesh.geometry?.dispose?.()
+
+    const material = (mesh as { material?: THREE.Material | THREE.Material[] }).material
+    if (Array.isArray(material)) {
+      for (const item of material) {
+        item.dispose()
+      }
+    } else {
+      material?.dispose()
+    }
+  })
 }

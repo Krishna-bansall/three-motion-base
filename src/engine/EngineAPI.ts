@@ -9,6 +9,7 @@ import { patchMaterial, setNodeTRS } from './scene/mutations'
 import { cloneSceneDoc, createEmptySceneDoc } from './scene/snapshot'
 import { diffSceneDocs, isSceneDeltaEmpty } from './scene/diff'
 import type { NodeId, Quat, SceneDoc } from './scene/types'
+import { eulerToQuaternionTuple, quaternionToEulerXYZ } from './scene/transformMath'
 import type {
   EnvironmentPreview,
   HDRIPreset,
@@ -27,6 +28,7 @@ import {
   publishHasModel,
   publishHistoryAvailability,
   publishLoading,
+  publishTrackedObjectTransform,
   publishViewSettings,
   readViewSettingsFromStore,
   type RuntimeStateGraph,
@@ -399,6 +401,7 @@ export class EngineAPI {
 
       publishHasModel(true)
       publishEntities(this.currentScene)
+      publishTrackedObjectTransform(this.currentScene)
       this.initializeHistory()
     } finally {
       publishLoading(false)
@@ -412,6 +415,7 @@ export class EngineAPI {
     await this.runtime.buildFromCanonical(createEmptySceneDoc())
     publishHasModel(false)
     publishEntities(null)
+    publishTrackedObjectTransform(null)
     this.resetHistory()
   }
 
@@ -428,6 +432,7 @@ export class EngineAPI {
 
     void this.runtime.applyDirty(delta, this.currentScene)
     publishEntities(this.currentScene)
+    publishTrackedObjectTransform(this.currentScene)
     this.commitCurrentSnapshot()
   }
 
@@ -453,6 +458,7 @@ export class EngineAPI {
       r: trs.r,
       s: trs.s,
     })
+    publishTrackedObjectTransform(this.currentScene)
   }
 
   private beginTransformHistory(): void {
@@ -506,6 +512,7 @@ export class EngineAPI {
       await this.runtime.setViewSettings(snapshot.viewSettings)
       publishViewSettings(snapshot.viewSettings)
       publishEntities(this.currentScene)
+      publishTrackedObjectTransform(this.currentScene)
     } finally {
       this.history.endApplyingHistory()
     }
@@ -547,43 +554,4 @@ export class EngineAPI {
       pathTracingReadiness: this.getPathTracingReadinessReport(),
     })
   }
-}
-
-function eulerToQuaternionTuple(
-  rx: number,
-  ry: number,
-  rz: number,
-): Quat {
-  const halfX = rx * 0.5
-  const halfY = ry * 0.5
-  const halfZ = rz * 0.5
-
-  const sx = Math.sin(halfX)
-  const cx = Math.cos(halfX)
-  const sy = Math.sin(halfY)
-  const cy = Math.cos(halfY)
-  const sz = Math.sin(halfZ)
-  const cz = Math.cos(halfZ)
-
-  return [
-    sx * cy * cz + cx * sy * sz,
-    cx * sy * cz - sx * cy * sz,
-    cx * cy * sz + sx * sy * cz,
-    cx * cy * cz - sx * sy * sz,
-  ]
-}
-
-function quaternionToEulerXYZ([x, y, z, w]: Quat): [number, number, number] {
-  const sinrCosp = 2 * (w * x + y * z)
-  const cosrCosp = 1 - 2 * (x * x + y * y)
-  const rx = Math.atan2(sinrCosp, cosrCosp)
-
-  const sinp = 2 * (w * y - z * x)
-  const ry = Math.abs(sinp) >= 1 ? Math.sign(sinp) * (Math.PI / 2) : Math.asin(sinp)
-
-  const sinyCosp = 2 * (w * z + x * y)
-  const cosyCosp = 1 - 2 * (y * y + z * z)
-  const rz = Math.atan2(sinyCosp, cosyCosp)
-
-  return [rx, ry, rz]
 }

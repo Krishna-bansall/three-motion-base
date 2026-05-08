@@ -4,6 +4,7 @@ import { EngineAPI } from '../../src/engine/EngineAPI.ts'
 import { convertCanonicalToBackendSchema } from '../../src/engine/runtime/conversion/canonicalToBackend.ts'
 import { createEmptySceneDoc, cloneSceneDoc } from '../../src/engine/scene/snapshot.ts'
 import { useEngineStore } from '../../src/store/useEngineStore.ts'
+import { createDefaultViewSettings } from '../../src/engine/viewSettings.ts'
 import type { RuntimeAdapter } from '../../src/engine/runtime/RuntimeAdapter.ts'
 import type {
   EnvironmentPreview,
@@ -19,34 +20,39 @@ class FakeRuntime implements RuntimeAdapter {
   constructor(public runtimeGraph: RuntimeDebugGraph) {}
   mount(): void {}
   unmount(): void {}
-  setSceneAssets(_: RuntimeSceneAssetBundle | null): void {}
-  async buildFromCanonical(_: SceneDoc): Promise<void> {}
-  async applyDirty(): Promise<void> {}
-  async setViewSettings(_: ViewSettings): Promise<void> {}
-  getViewSettings(): ViewSettings {
-    return {
-      activeHDRI: 'studio',
-      exposure: 1,
-      bloom: { strength: 0.3, radius: 0.6, threshold: 0.85 },
-      cinematic: {
-        vignette: 0.35,
-        vignetteEnabled: true,
-        chromaticAberration: 0.003,
-        filmGrain: 0,
-        colorTemperature: 0,
-      },
-      autoRotate: false,
-      autoRotateSpeed: 0.3,
-    }
+  setSceneAssets(assets: RuntimeSceneAssetBundle | null): void {
+    void assets
   }
-  setTransformToolMode(_: TransformGizmoMode | null): void {}
+  async buildFromCanonical(scene: SceneDoc): Promise<void> {
+    void scene
+  }
+  async applyDirty(delta: unknown, scene: SceneDoc): Promise<void> {
+    void delta
+    void scene
+  }
+  async setViewSettings(settings: ViewSettings): Promise<void> {
+    void settings
+  }
+  getViewSettings(): ViewSettings {
+    return createDefaultViewSettings()
+  }
+  setTransformToolMode(mode: TransformGizmoMode | null): void {
+    void mode
+  }
   getTransformToolMode(): TransformGizmoMode | null { return 'rotate' }
-  onRuntimeTransformChanged(_: ((nodeId: NodeId, trs: TRS) => void) | null): void {}
-  onTransformInteractionStart(_: (() => void) | null): void {}
-  onTransformInteractionEnd(_: (() => void) | null): void {}
+  onRuntimeTransformChanged(cb: ((nodeId: NodeId, trs: TRS) => void) | null): void {
+    void cb
+  }
+  onTransformInteractionStart(cb: (() => void) | null): void {
+    void cb
+  }
+  onTransformInteractionEnd(cb: (() => void) | null): void {
+    void cb
+  }
   async exportPNG(): Promise<Blob> { return new Blob(['fake'], { type: 'image/png' }) }
   getEnvironmentPreviews(): EnvironmentPreview[] { return [] }
-  getRuntimeDebugGraph(_: SceneDoc): RuntimeDebugGraph {
+  getRuntimeDebugGraph(scene: SceneDoc): RuntimeDebugGraph {
+    void scene
     return this.runtimeGraph
   }
 }
@@ -58,18 +64,8 @@ function resetStore(): void {
     hasModel: false,
     canUndo: false,
     canRedo: false,
-    activeHDRI: 'studio',
-    exposure: 1,
-    bloom: { strength: 0.3, radius: 0.6, threshold: 0.85 },
-    cinematic: {
-      vignette: 0.35,
-      vignetteEnabled: true,
-      chromaticAberration: 0.003,
-      filmGrain: 0,
-      colorTemperature: 0,
-    },
-    autoRotate: false,
-    autoRotateSpeed: 0.3,
+    trackedObjectTransform: null,
+    ...createDefaultViewSettings(),
   })
 }
 
@@ -180,6 +176,12 @@ test('getRuntimeStateGraph merges store state, history state, and runtime debug 
     exposure: 1.7,
     autoRotate: true,
     autoRotateSpeed: 0.6,
+    trackedObjectTransform: {
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      distanceFromOrigin: 0,
+    },
   })
 
   engine.setExposure(2.1)
@@ -210,6 +212,12 @@ test('getRuntimeStateGraph merges store state, history state, and runtime debug 
     autoRotate: true,
     autoRotateSpeed: 0.6,
     transformMode: 'rotate',
+    trackedObjectTransform: {
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      distanceFromOrigin: 0,
+    },
   })
   assert.deepEqual(graph.root, runtime.runtimeGraph.root)
   assert.deepEqual(graph.meshes, runtime.runtimeGraph.meshes)
