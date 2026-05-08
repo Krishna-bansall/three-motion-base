@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { importGLTFScene } from '../../src/engine/assets/importGLTFScene.ts'
 import {
   loadGLTFFromFile,
   loadGLTFFromFiles,
@@ -91,6 +92,50 @@ function withMockedBlobUrls(
   })
 }
 
+test('importGLTFScene builds a canonical SceneDoc and explicit source reference', () => {
+  const imported = importGLTFScene(createSyntheticScene(), {
+    uri: '/models/synthetic.glb',
+    label: 'synthetic.glb',
+  })
+
+  assert.deepEqual(Object.keys(imported).sort(), ['scene', 'source'])
+  assert.deepEqual(Object.keys(imported.source).sort(), ['cache', 'reference', 'rootNodeId'])
+  assert.deepEqual(imported.source.reference, {
+    uri: '/models/synthetic.glb',
+    label: 'synthetic.glb',
+  })
+
+  const { scene } = imported
+  assert.deepEqual(scene.roots, ['node-0'])
+  assert.equal(imported.source.rootNodeId, scene.roots[0])
+  assert.ok(imported.source.cache.rootObject instanceof THREE.Group)
+
+  const nodesByName = Object.fromEntries(
+    Object.values(scene.nodes).map((node) => [node.name, node]),
+  )
+
+  assert.equal(nodesByName.ProductRoot?.parentId, null)
+  assert.equal(nodesByName.ImportedRoot?.parentId, 'node-0')
+  assert.equal(nodesByName.Body?.parentId, nodesByName.ImportedRoot?.id)
+  assert.equal(nodesByName.Badge?.parentId, nodesByName.ImportedRoot?.id)
+  assert.equal(nodesByName.Nested?.parentId, nodesByName.ImportedRoot?.id)
+  assert.equal(nodesByName.Accent?.parentId, nodesByName.Nested?.id)
+  assert.equal(nodesByName.Badge?.visible, false)
+  assert.notDeepEqual(nodesByName.ImportedRoot?.s, [1, 1, 1])
+
+  assert.equal(Object.keys(scene.meshes).length, 3)
+  assert.equal(Object.keys(scene.materials).length, 2)
+  assert.equal(nodesByName.Body?.materialId, nodesByName.Badge?.materialId)
+  assert.notEqual(nodesByName.Body?.materialId, nodesByName.Accent?.materialId)
+
+  const sharedMaterialId = nodesByName.Body?.materialId
+  assert.ok(sharedMaterialId)
+  assert.deepEqual(scene.materials[sharedMaterialId].baseColor, [0.7, 0.2, 0.1])
+  assert.equal(scene.materials[sharedMaterialId].roughness, 0.4)
+  assert.equal(scene.materials[sharedMaterialId].metalness, 0)
+  assert.equal(scene.materials[sharedMaterialId].envMapIntensity, 1.2)
+})
+
 test('loadGLTFFromURL builds canonical nodes, preserves hierarchy, and deduplicates shared materials', async () => {
   let requestedUrl = ''
 
@@ -104,6 +149,11 @@ test('loadGLTFFromURL builds canonical nodes, preserves hierarchy, and deduplica
       const { canonicalScene, runtimeAssets } = model
 
       assert.equal(requestedUrl, '/models/synthetic.glb')
+      assert.deepEqual(model.source.reference, {
+        uri: '/models/synthetic.glb',
+        label: 'synthetic.glb',
+      })
+      assert.equal(model.source.rootNodeId, canonicalScene.roots[0])
       assert.deepEqual(canonicalScene.roots, ['node-0'])
 
       const nodesByName = Object.fromEntries(
@@ -143,6 +193,40 @@ test('loadGLTFFromURL builds canonical nodes, preserves hierarchy, and deduplica
       assert.equal(materialB.roughness, 0.4)
     },
   )
+})
+
+test('loadGLTFFromFiles preserves split-package source reference and runtime assets', async () => {
+  const gltfFile = new File(['{"asset":{"version":"2.0"}}'], 'scene.gltf', {
+    type: 'model/gltf+json',
+  })
+  const textureFile = new File(['png'], 'albedo.png', { type: 'image/png' })
+  Object.defineProperty(gltfFile, 'webkitRelativePath', {
+    value: 'packages/model/scene.gltf',
+  })
+  Object.defineProperty(textureFile, 'webkitRelativePath', {
+    value: 'packages/model/textures/albedo.png',
+  })
+
+  await withMockedBlobUrls(async ({ created }) => {
+    await withMockedLoader(
+      async (url) => {
+        assert.equal(url, created[0])
+        return { scene: createSyntheticScene() }
+      },
+      async () => {
+        const model = await loadGLTFFromFiles([gltfFile, textureFile])
+
+        assert.deepEqual(model.source.reference, {
+          uri: 'packages/model/scene.gltf',
+          label: 'scene.gltf',
+        })
+        assert.equal(model.source.rootNodeId, model.canonicalScene.roots[0])
+
+        const instance = model.runtimeAssets.instantiate()
+        assert.ok(instance.rootObject)
+      },
+    )
+  })
 })
 
 test('loadGLTFFromFile revokes its blob URL when loading fails', async () => {

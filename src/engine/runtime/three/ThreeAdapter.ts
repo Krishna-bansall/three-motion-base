@@ -9,15 +9,18 @@ import type {
   EnvironmentPreview,
   RuntimeDebugGraph,
   RuntimeSceneAssetBundle,
+  RuntimeSceneInstance,
   TransformGizmoMode,
   TRS,
 } from '../types'
+import { buildRuntimeSceneInstanceFromSource } from './runtimeScene'
 import type { SceneDelta } from '../../scene/diff'
 import type { NodeId, SceneDoc, SceneNode } from '../../scene/types'
 
 export class ThreeAdapter implements RuntimeAdapter {
   private renderer: ThreeRenderer | null = null
   private sceneAssets: RuntimeSceneAssetBundle | null = null
+  private activeRootNodeId: NodeId | null = null
   private nodeObjects = new Map<NodeId, THREE.Object3D>()
   private materialObjects = new Map<string, THREE.Material[]>()
   private viewSettings: ViewSettings = createDefaultViewSettings()
@@ -29,8 +32,8 @@ export class ThreeAdapter implements RuntimeAdapter {
     this.renderer = new ThreeRenderer()
     this.renderer.mount(container)
     this.renderer.onProductTransformChange = () => {
-      if (!this.sceneAssets || !this.runtimeTransformChanged || !this.renderer) return
-      this.runtimeTransformChanged(this.sceneAssets.rootNodeId, captureTRS(this.renderer.productRoot))
+      if (!this.activeRootNodeId || !this.runtimeTransformChanged || !this.renderer) return
+      this.runtimeTransformChanged(this.activeRootNodeId, captureTRS(this.renderer.productRoot))
     }
     this.renderer.onTransformInteractionStart = () => this.transformInteractionStart?.()
     this.renderer.onTransformInteractionEnd = () => this.transformInteractionEnd?.()
@@ -45,12 +48,16 @@ export class ThreeAdapter implements RuntimeAdapter {
 
     this.renderer?.unmount()
     this.renderer = null
+    this.activeRootNodeId = null
     this.nodeObjects.clear()
     this.materialObjects.clear()
   }
 
   setSceneAssets(assets: RuntimeSceneAssetBundle | null): void {
     this.sceneAssets = assets
+    if (!assets) {
+      this.activeRootNodeId = null
+    }
   }
 
   async buildFromCanonical(scene: SceneDoc): Promise<void> {
@@ -60,21 +67,27 @@ export class ThreeAdapter implements RuntimeAdapter {
     this.nodeObjects.clear()
     this.materialObjects.clear()
 
-    if (!this.sceneAssets) {
+    if (!this.sceneAssets || scene.roots.length === 0) {
+      this.activeRootNodeId = null
       return
     }
 
-    const instance = this.sceneAssets.instantiate()
-    const templateRoot = instance.rootObject as THREE.Group
+    const instance = this.createRuntimeSceneInstance(scene)
+    const templateRoot = instance.rootObject as THREE.Object3D
 
     for (const child of [...templateRoot.children]) {
       this.renderer.productRoot.add(child)
     }
 
-    this.nodeObjects.set(this.sceneAssets.rootNodeId, this.renderer.productRoot)
+    const rootNodeId = instance.rootNodeId || scene.roots[0]
+    if (rootNodeId) {
+      this.activeRootNodeId = rootNodeId
+      this.nodeObjects.set(rootNodeId, this.renderer.productRoot)
+      this.renderer.productRoot.userData.threeMotionNodeId = rootNodeId
+    }
 
     for (const [nodeId, object] of instance.nodeObjects.entries()) {
-      if (nodeId === this.sceneAssets.rootNodeId) continue
+      if (nodeId === rootNodeId) continue
       this.nodeObjects.set(nodeId, object as THREE.Object3D)
     }
 
@@ -194,7 +207,7 @@ export class ThreeAdapter implements RuntimeAdapter {
   }
 
   getRuntimeDebugGraph(scene: SceneDoc): RuntimeDebugGraph {
-    const rootNodeId = this.sceneAssets?.rootNodeId ?? scene.roots[0] ?? null
+    const rootNodeId = scene.roots[0] ?? this.activeRootNodeId ?? this.sceneAssets?.rootNodeId ?? null
     const root = rootNodeId ? buildDebugNode(scene, rootNodeId) : null
     const meshes = Object.values(scene.nodes)
       .filter((node) => node.meshId)
@@ -209,6 +222,18 @@ export class ThreeAdapter implements RuntimeAdapter {
     for (const child of [...this.renderer.productRoot.children]) {
       this.renderer.productRoot.remove(child)
     }
+  }
+
+  private createRuntimeSceneInstance(scene: SceneDoc): RuntimeSceneInstance {
+    if (!this.sceneAssets) {
+      throw new Error('Scene assets must be set before building the runtime scene')
+    }
+
+    if (this.sceneAssets.source) {
+      return buildRuntimeSceneInstanceFromSource(scene, this.sceneAssets.source)
+    }
+
+    return this.sceneAssets.instantiate()
   }
 
   private applyFullScene(scene: SceneDoc): void {
