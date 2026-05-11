@@ -27,8 +27,9 @@ import {
   createDefaultProject,
   getLookPresets,
   replaceProductSlotAsset,
+  updateStudioEnvironment,
 } from './project/document'
-import type { LookPreset, LookPresetId, ProjectDoc, StudioPresetId } from './project/types'
+import type { LookPreset, LookPresetId, ProjectDoc, StudioGeometryKind, StudioPresetId } from './project/types'
 import {
   buildConsoleState,
   buildRuntimeStateGraph,
@@ -37,6 +38,8 @@ import {
   publishHasModel,
   publishHistoryAvailability,
   publishLoading,
+  publishProjectLook,
+  publishSelectedStudioObject,
   publishStudioSetupObjects,
   publishTrackedObjectTransform,
   publishViewSettings,
@@ -111,12 +114,21 @@ export class EngineAPI {
   }
 
   async setHDRI(preset: HDRIPreset): Promise<void> {
+    const nextProject = updateStudioEnvironment(this.currentProject, { hdriId: preset })
+    const previous = readViewSettingsFromStore()
     const next = readViewSettingsFromStore()
-    if (next.activeHDRI === preset) return
+    const projectChanged = JSON.stringify(nextProject) !== JSON.stringify(this.currentProject)
 
+    if (next.activeHDRI === preset && !projectChanged) return
+
+    this.currentProject = nextProject
     next.activeHDRI = preset
-    await this.runtime.setViewSettings(next)
-    publishViewSettings(next)
+
+    if (!areViewSettingsEqual(previous, next)) {
+      publishViewSettings(next)
+      await this.runtime.setViewSettings(next)
+    }
+
     this.commitCurrentSnapshot()
   }
 
@@ -191,9 +203,19 @@ export class EngineAPI {
   applyLookPreset(presetId: LookPresetId): void {
     const nextProject = applyProjectLookPreset(this.currentProject, presetId)
     const look = nextProject.look
+    const projectChanged = JSON.stringify(nextProject) !== JSON.stringify(this.currentProject)
 
     this.currentProject = nextProject
-    this.setViewSettings(applyProjectLookToViewSettings(readViewSettingsFromStore(), look))
+    publishProjectLook(this.currentProject)
+    this.setViewSettings(
+      applyProjectLookToViewSettings(readViewSettingsFromStore(), look),
+      readViewSettingsFromStore(),
+      { commitSnapshot: false },
+    )
+
+    if (projectChanged) {
+      this.commitCurrentSnapshot()
+    }
   }
 
   async applyStudioPreset(presetId: StudioPresetId): Promise<void> {
@@ -223,6 +245,36 @@ export class EngineAPI {
     publishEntities(this.currentScene)
     publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
     this.commitCurrentSnapshot()
+  }
+
+  setStudioObjectVisible(nodeId: NodeId, visible: boolean): void {
+    const nextProject = cloneProjectDoc(this.currentProject)
+    const object = Object.values(nextProject.studioScene.studioGeometry)
+      .find((studioObject) => studioObject.nodeId === nodeId)
+
+    if (!object || object.visible === visible) return
+
+    object.visible = visible
+    this.currentProject = nextProject
+
+    if (this.currentScene?.nodes[nodeId]) {
+      const previous = cloneSceneDoc(this.currentScene)
+      this.currentScene.nodes[nodeId].visible = visible
+      const delta = diffSceneDocs(previous, this.currentScene)
+
+      if (!isSceneDeltaEmpty(delta)) {
+        void this.runtime.applyDirty(delta, this.currentScene)
+        publishEntities(this.currentScene)
+        publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
+      }
+    }
+
+    publishStudioSetupObjects(this.currentProject)
+    this.commitCurrentSnapshot()
+  }
+
+  selectStudioObject(nodeId: NodeId | null): void {
+    publishSelectedStudioObject(nodeId)
   }
 
   setTransform(
@@ -529,6 +581,7 @@ export class EngineAPI {
       await this.runtime.setViewSettings(readViewSettingsFromStore())
 
       publishHasModel(true)
+      publishProjectLook(this.currentProject)
       publishStudioSetupObjects(this.currentProject)
       publishEntities(this.currentScene)
       publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
@@ -570,13 +623,31 @@ export class EngineAPI {
     })
 
     for (const object of Object.values(project.studioScene.studioGeometry)) {
+      const material = Object.values(project.studioScene.materials)[0]
       scene.nodes[object.nodeId] = createProjectNode({
         id: object.nodeId,
         parentId: studioRootId,
         name: object.name,
         children: [],
         visible: object.visible,
+        t: getStudioGeometryTransform(object.kind),
+        meshId: `mesh-${object.id}`,
+        materialId: material?.materialId,
       })
+      scene.meshes[`mesh-${object.id}`] = {
+        source: {
+          uri: `builtin:studio/${object.kind}`,
+        },
+      }
+    }
+
+    for (const material of Object.values(project.studioScene.materials)) {
+      scene.materials[material.materialId] = {
+        baseColor: [0.86, 0.86, 0.82],
+        roughness: 0.78,
+        metalness: 0.02,
+        envMapIntensity: project.studioScene.environment.intensity,
+      }
     }
 
     if (importedScene) {
@@ -587,8 +658,14 @@ export class EngineAPI {
         }
       }
 
-      scene.meshes = structuredClone(importedScene.meshes)
-      scene.materials = structuredClone(importedScene.materials)
+      scene.meshes = {
+        ...scene.meshes,
+        ...structuredClone(importedScene.meshes),
+      }
+      scene.materials = {
+        ...scene.materials,
+        ...structuredClone(importedScene.materials),
+      }
     }
 
     return scene
@@ -621,12 +698,16 @@ export class EngineAPI {
   private setViewSettings(
     next: EngineSnapshot['viewSettings'],
     previous: EngineSnapshot['viewSettings'] = readViewSettingsFromStore(),
-  ): void {
-    if (areViewSettingsEqual(previous, next)) return
+    options: { commitSnapshot?: boolean } = {},
+  ): boolean {
+    if (areViewSettingsEqual(previous, next)) return false
 
     publishViewSettings(next)
     void this.runtime.setViewSettings(next)
-    this.commitCurrentSnapshot()
+    if (options.commitSnapshot ?? true) {
+      this.commitCurrentSnapshot()
+    }
+    return true
   }
 
   private syncRuntimeTransform(nodeId: NodeId, trs: TRS): void {
@@ -692,6 +773,7 @@ export class EngineAPI {
       await this.runtime.buildFromCanonical(this.currentScene ?? createEmptySceneDoc())
       await this.runtime.setViewSettings(snapshot.viewSettings)
       publishViewSettings(snapshot.viewSettings)
+      publishProjectLook(this.currentProject)
       publishStudioSetupObjects(this.currentProject)
       publishEntities(this.currentScene)
       publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
@@ -751,6 +833,8 @@ function createProjectNode(params: {
   children: NodeId[]
   t?: [number, number, number]
   visible?: boolean
+  meshId?: string
+  materialId?: string
 }): SceneNode {
   return {
     id: params.id,
@@ -761,5 +845,18 @@ function createProjectNode(params: {
     r: [0, 0, 0, 1],
     s: [1, 1, 1],
     visible: params.visible ?? true,
+    ...(params.meshId ? { meshId: params.meshId } : {}),
+    ...(params.materialId ? { materialId: params.materialId } : {}),
+  }
+}
+
+function getStudioGeometryTransform(kind: StudioGeometryKind): [number, number, number] {
+  switch (kind) {
+    case 'floor':
+      return [0, -0.78, 0]
+    case 'backdrop':
+      return [0, 0.55, -2.15]
+    case 'plinth':
+      return [0, -0.52, 0]
   }
 }

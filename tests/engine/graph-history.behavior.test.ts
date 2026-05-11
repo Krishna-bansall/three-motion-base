@@ -93,6 +93,7 @@ function resetStore(): void {
     trackedObjectTransform: null,
     studioSetupObjects: [],
     selectedStudioObjectNodeId: null,
+    activeLookId: 'look-studio-neutral',
     ...createDefaultViewSettings(),
   })
 }

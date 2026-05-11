@@ -7,6 +7,7 @@ import {
   createDefaultProject,
   getLookPresets,
   replaceProductSlotAsset,
+  updateStudioEnvironment,
   updateActiveShotTiming,
 } from '../../src/engine/project/document.ts'
 
@@ -92,6 +93,17 @@ test('replaceProductSlotAsset fills the primary product slot with an imported as
     rootNodeId: 'node-imported-chair-root',
   })
   assert.equal(project.studioScene.productSlots['product-slot-primary'].asset, null)
+})
+
+test('updateStudioEnvironment changes HDRI without mutating the input project', () => {
+  const project = createDefaultProject()
+
+  const updated = updateStudioEnvironment(project, { hdriId: 'moody', intensity: 0.7 })
+
+  assert.equal(updated.studioScene.environment.hdriId, 'moody')
+  assert.equal(updated.studioScene.environment.intensity, 0.7)
+  assert.equal(updated.studioScene.environment.rotation, 0)
+  assert.equal(project.studioScene.environment.hdriId, 'studio')
 })
 
 test('replaceProductSlotAsset preserves studio setup, look, and shot metadata', () => {

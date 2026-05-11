@@ -14,7 +14,7 @@ interface FiltersPanelProps {
 export function FiltersPanel({ engine }: FiltersPanelProps) {
   const bloom = useEngineStore((s) => s.bloom)
   const cinematic = useEngineStore((s) => s.cinematic)
-  const activeLookId = engine.getProjectSnapshot().look.id
+  const activeLookId = useEngineStore((s) => s.activeLookId)
   const lookPresets = engine.getLookPresets()
   const rangeHistoryProps = {
     onPointerDown: () => engine.beginHistoryBatch(),

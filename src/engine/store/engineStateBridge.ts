@@ -122,6 +122,14 @@ export function publishStudioSetupObjects(project: ProjectDoc): void {
   useEngineStore.getState().setStudioSetupObjects(objects)
 }
 
+export function publishSelectedStudioObject(nodeId: string | null): void {
+  useEngineStore.getState().setSelectedStudioObjectNodeId(nodeId)
+}
+
+export function publishProjectLook(project: ProjectDoc): void {
+  useEngineStore.getState().setActiveLookId(project.look.id)
+}
+
 export function publishEntities(scene: SceneDoc | null): void {
   if (!scene) {
     useEngineStore.getState().setEntities([])

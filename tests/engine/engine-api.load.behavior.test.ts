@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { EngineAPI } from '../../src/engine/EngineAPI.ts'
 import { useEngineStore } from '../../src/store/useEngineStore.ts'
-import { cloneSceneDoc, createEmptySceneDoc } from '../../src/engine/scene/snapshot.ts'
+import { cloneSceneDoc } from '../../src/engine/scene/snapshot.ts'
 import { cloneViewSettings, createDefaultViewSettings } from '../../src/engine/viewSettings.ts'
 import type { RuntimeAdapter } from '../../src/engine/runtime/RuntimeAdapter.ts'
 import type {
@@ -101,6 +101,7 @@ function resetStore(): void {
     trackedObjectTransform: null,
     studioSetupObjects: [],
     selectedStudioObjectNodeId: null,
+    activeLookId: 'look-studio-neutral',
     ...createDefaultViewSettings(),
   })
 }
@@ -344,6 +345,18 @@ test('EngineAPI applies Look presets through project state and runtime view sett
   assert.equal(runtime.viewSettingsCalls.at(-1)?.exposure, 1.25)
 })
 
+test('EngineAPI keeps Studio Scene HDRI in project state and runtime view settings', async () => {
+  const { engine, runtime } = createMountedEngine()
+  const initialViewSettingsCallCount = runtime.viewSettingsCalls.length
+
+  await engine.setHDRI('moody')
+
+  assert.equal(engine.getProjectSnapshot().studioScene.environment.hdriId, 'moody')
+  assert.equal(useEngineStore.getState().activeHDRI, 'moody')
+  assert.equal(runtime.viewSettingsCalls.length, initialViewSettingsCallCount + 1)
+  assert.equal(runtime.viewSettingsCalls.at(-1)?.activeHDRI, 'moody')
+})
+
 test('EngineAPI applies a studio preset before import and preserves it through replacement', async () => {
   const { engine } = createMountedEngine()
 
@@ -359,6 +372,15 @@ test('EngineAPI applies a studio preset before import and preserves it through r
     [false, false, false],
   )
   assert.equal(engine.getCanonicalSceneSnapshot()?.nodes['node-studio-floor']?.visible, true)
+  assert.equal(engine.getCanonicalSceneSnapshot()?.nodes['node-studio-floor']?.meshId, 'mesh-studio-geometry-floor')
+  assert.equal(
+    engine.getCanonicalSceneSnapshot()?.nodes['node-studio-floor']?.materialId,
+    'material-studio-matte-white',
+  )
+  assert.equal(
+    engine.getCanonicalSceneSnapshot()?.meshes['mesh-studio-geometry-plinth']?.source.uri,
+    'builtin:studio/plinth',
+  )
 
   await withMockedLoader(
     async () => ({ scene: createStubGLTFScene('preset-product') }),

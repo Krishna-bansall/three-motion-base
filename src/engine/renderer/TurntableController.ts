@@ -55,6 +55,12 @@ export class TurntableController {
     window.addEventListener('pointerup', this._onPointerUp)
   }
 
+  setTarget(target: THREE.Object3D): void {
+    this.target = target
+    this.currentPolarAngle = target.rotation.x
+    this.velocity = { x: 0, y: 0 }
+  }
+
   private onPointerDown(e: PointerEvent): void {
     if (!this.enabled) return
     this.isDragging = true

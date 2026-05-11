@@ -5,6 +5,7 @@ import type {
   ProductSlotAsset,
   ProjectDoc,
   ProjectLook,
+  StudioEnvironment,
   ShotDoc,
   StudioPresetId,
 } from './types'
@@ -137,6 +138,18 @@ export function getLookPresets(): LookPreset[] {
 export function applyLookPreset(project: ProjectDoc, presetId: LookPresetId): ProjectDoc {
   const updated = cloneProjectDoc(project)
   updated.look = cloneLookPreset(presetId)
+  return updated
+}
+
+export function updateStudioEnvironment(
+  project: ProjectDoc,
+  environment: Partial<Pick<StudioEnvironment, 'hdriId' | 'intensity' | 'rotation'>>,
+): ProjectDoc {
+  const updated = cloneProjectDoc(project)
+  updated.studioScene.environment = {
+    ...updated.studioScene.environment,
+    ...environment,
+  }
   return updated
 }
 

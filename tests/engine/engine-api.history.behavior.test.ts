@@ -115,6 +115,7 @@ function resetStore(): void {
     trackedObjectTransform: null,
     studioSetupObjects: [],
     selectedStudioObjectNodeId: null,
+    activeLookId: 'look-studio-neutral',
     ...createDefaultViewSettings(),
   })
 }
@@ -312,12 +313,41 @@ test('look preset history restores project Look and runtime view settings', asyn
   await engine.undo()
 
   assert.equal(engine.getProjectSnapshot().look.id, 'look-studio-neutral')
+  assert.equal(useEngineStore.getState().activeLookId, 'look-studio-neutral')
   assert.equal(useEngineStore.getState().exposure, 1)
 
   await engine.redo()
 
   assert.equal(engine.getProjectSnapshot().look.id, 'look-warm-hero')
+  assert.equal(useEngineStore.getState().activeLookId, 'look-warm-hero')
   assert.equal(useEngineStore.getState().exposure, 1.25)
+})
+
+test('look preset project changes publish active Look even when view settings are already equal', async () => {
+  const { engine, runtime } = await createLoadedEngine()
+  useEngineStore.setState({
+    exposure: 1.25,
+    bloom: {
+      strength: 0.45,
+      radius: 0.7,
+      threshold: 0.82,
+    },
+    cinematic: {
+      vignette: 0.42,
+      vignetteEnabled: true,
+      chromaticAberration: 0.002,
+      filmGrain: 0.012,
+      colorTemperature: 0.28,
+    },
+  })
+  const initialViewSettingsCalls = runtime.viewSettingsCalls.length
+
+  engine.applyLookPreset('warm-hero')
+
+  assert.equal(engine.getProjectSnapshot().look.id, 'look-warm-hero')
+  assert.equal(useEngineStore.getState().activeLookId, 'look-warm-hero')
+  assert.equal(runtime.viewSettingsCalls.length, initialViewSettingsCalls)
+  assert.equal(engine.getRuntimeStateGraph().history.undoDepth, 1)
 })
 
 test('equivalent nested view settings updates do not create history or runtime writes', async () => {

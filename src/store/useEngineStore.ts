@@ -55,6 +55,7 @@ export interface EngineState {
   trackedObjectTransform: TrackedObjectTransform | null
   studioSetupObjects: StudioSetupObjectInfo[]
   selectedStudioObjectNodeId: string | null
+  activeLookId: string
 
   // ── Lighting ──
   activeHDRI: HDRIPreset
@@ -76,6 +77,7 @@ export interface EngineState {
   setTrackedObjectTransform: (transform: TrackedObjectTransform | null) => void
   setStudioSetupObjects: (objects: StudioSetupObjectInfo[]) => void
   setSelectedStudioObjectNodeId: (nodeId: string | null) => void
+  setActiveLookId: (lookId: string) => void
   setActiveHDRI: (h: HDRIPreset) => void
   setExposure: (v: number) => void
   setBloom: (b: BloomSettings) => void
@@ -93,6 +95,7 @@ export const useEngineStore = create<EngineState>((set) => ({
   trackedObjectTransform: null,
   studioSetupObjects: [],
   selectedStudioObjectNodeId: null,
+  activeLookId: 'look-studio-neutral',
 
   ...createDefaultViewSettings(),
 
@@ -103,6 +106,7 @@ export const useEngineStore = create<EngineState>((set) => ({
   setTrackedObjectTransform: (transform) => set({ trackedObjectTransform: transform }),
   setStudioSetupObjects: (objects) => set({ studioSetupObjects: objects }),
   setSelectedStudioObjectNodeId: (nodeId) => set({ selectedStudioObjectNodeId: nodeId }),
+  setActiveLookId: (lookId) => set({ activeLookId: lookId }),
   setActiveHDRI: (h) => set({ activeHDRI: h }),
   setExposure: (v) => set({ exposure: v }),
   setBloom: (b) => set({ bloom: b }),

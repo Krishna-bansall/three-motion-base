@@ -106,6 +106,57 @@ function createRuntimeSourceAssets(): RuntimeSceneAssetBundle {
   }
 }
 
+function createWrappedStudioScene(): SceneDoc {
+  const scene = createScene()
+  scene.roots = ['node-studio-root']
+  scene.nodes['node-studio-root'] = {
+    id: 'node-studio-root',
+    parentId: null,
+    children: ['node-product-slot-primary', 'node-studio-floor'],
+    name: 'Studio Scene',
+    t: [0, 0, 0],
+    r: [0, 0, 0, 1],
+    s: [1, 1, 1],
+    visible: true,
+  }
+  scene.nodes['node-product-slot-primary'] = {
+    id: 'node-product-slot-primary',
+    parentId: 'node-studio-root',
+    children: ['node-root'],
+    name: 'Primary Product',
+    t: [0, 0, 0],
+    r: [0, 0, 0, 1],
+    s: [1, 1, 1],
+    visible: true,
+  }
+  scene.nodes['node-root'] = {
+    ...scene.nodes['node-root'],
+    parentId: 'node-product-slot-primary',
+  }
+  scene.meshes['mesh-studio-geometry-floor'] = {
+    source: { uri: 'builtin:studio/floor' },
+  }
+  scene.materials['material-studio-matte-white'] = {
+    baseColor: [0.86, 0.86, 0.82],
+    roughness: 0.78,
+    metalness: 0.02,
+    envMapIntensity: 1,
+  }
+  scene.nodes['node-studio-floor'] = {
+    id: 'node-studio-floor',
+    parentId: 'node-studio-root',
+    children: [],
+    name: 'Matte Floor',
+    t: [0, -0.78, 0],
+    r: [0, 0, 0, 1],
+    s: [1, 1, 1],
+    meshId: 'mesh-studio-geometry-floor',
+    materialId: 'material-studio-matte-white',
+    visible: true,
+  }
+  return scene
+}
+
 function createViewSettings(overrides: Partial<ViewSettings> = {}): ViewSettings {
   const defaults = createDefaultViewSettings()
   return {
@@ -151,6 +202,7 @@ function attachFakeRenderer(adapter: ThreeAdapter) {
     setExposure: (value: number) => { setExposureCalls.push(value) },
     setTransformMode: (mode: 'translate' | 'rotate' | 'scale' | null) => { transformMode = mode },
     getTransformMode: () => transformMode,
+    setInteractionTarget: (target: THREE.Object3D) => { interactionTarget = target },
   }
   const bloomCalls: Array<[number, number, number]> = []
   const vignetteEnabledCalls: boolean[] = []
@@ -159,6 +211,7 @@ function attachFakeRenderer(adapter: ThreeAdapter) {
   const grainCalls: number[] = []
   const tempCalls: number[] = []
   let unmountCount = 0
+  let interactionTarget: THREE.Object3D | null = null
 
   ;(adapter as unknown as { renderer: typeof renderer }).renderer = renderer
 
@@ -174,6 +227,7 @@ function attachFakeRenderer(adapter: ThreeAdapter) {
     grainCalls,
     tempCalls,
     getTransformMode: () => transformMode,
+    getInteractionTarget: () => interactionTarget,
     getUnountCount: () => unmountCount,
   }
 }
@@ -188,6 +242,7 @@ function resetStore(): void {
     trackedObjectTransform: null,
     studioSetupObjects: [],
     selectedStudioObjectNodeId: null,
+    activeLookId: 'look-studio-neutral',
     ...createDefaultViewSettings(),
   })
 }
@@ -205,7 +260,8 @@ test('ThreeAdapter.buildFromCanonical clears previous runtime children before re
   await adapter.buildFromCanonical(createScene())
 
   assert.equal(runtime.productRoot.children.length, 1)
-  assert.equal((runtime.productRoot.children[0] as THREE.Mesh).name, 'MeshNode')
+  assert.equal(runtime.productRoot.children[0]?.name, 'ProductRoot')
+  assert.equal(runtime.productRoot.children[0]?.children[0]?.name, 'MeshNode')
 })
 
 test('ThreeAdapter builds from adapter-owned source data and keeps material clones isolated across rebuilds', async () => {
@@ -215,17 +271,19 @@ test('ThreeAdapter builds from adapter-owned source data and keeps material clon
   adapter.setSceneAssets(createRuntimeSourceAssets())
   await adapter.buildFromCanonical(createScene())
 
-  const firstMesh = runtime.productRoot.children[0] as THREE.Mesh
+  const firstMesh = runtime.productRoot.children[0]?.children[0] as THREE.Mesh
   const firstMaterial = firstMesh.material as THREE.MeshStandardMaterial
 
+  assert.equal(runtime.productRoot.children[0]?.userData.threeMotionNodeId, 'node-root')
   assert.equal(firstMesh.userData.threeMotionNodeId, 'node-mesh')
   assert.equal(firstMaterial.userData.threeMotionMaterialId, 'material-0')
   assert.equal(firstMaterial.roughness, 0.4)
+  assert.equal(runtime.getInteractionTarget()?.userData.threeMotionNodeId, 'node-root')
 
   firstMaterial.roughness = 0.95
   await adapter.buildFromCanonical(createScene())
 
-  const secondMesh = runtime.productRoot.children[0] as THREE.Mesh
+  const secondMesh = runtime.productRoot.children[0]?.children[0] as THREE.Mesh
   const secondMaterial = secondMesh.material as THREE.MeshStandardMaterial
 
   assert.notEqual(secondMesh, firstMesh)
@@ -233,6 +291,27 @@ test('ThreeAdapter builds from adapter-owned source data and keeps material clon
   assert.equal(secondMesh.userData.threeMotionNodeId, 'node-mesh')
   assert.equal(secondMaterial.userData.threeMotionMaterialId, 'material-0')
   assert.equal(secondMaterial.roughness, 0.4)
+})
+
+test('ThreeAdapter realizes Studio Scene wrapper nodes and built-in studio geometry', async () => {
+  const adapter = new ThreeAdapter()
+  const runtime = attachFakeRenderer(adapter)
+
+  adapter.setSceneAssets(createRuntimeSourceAssets())
+  await adapter.buildFromCanonical(createWrappedStudioScene())
+
+  const studioRoot = runtime.productRoot.children[0] as THREE.Group
+  const productSlot = studioRoot.children[0] as THREE.Group
+  const productRoot = productSlot.children[0] as THREE.Group
+  const floor = studioRoot.children[1] as THREE.Mesh
+  const floorMaterial = floor.material as THREE.MeshStandardMaterial
+
+  assert.equal(studioRoot.userData.threeMotionNodeId, 'node-studio-root')
+  assert.equal(productSlot.userData.threeMotionNodeId, 'node-product-slot-primary')
+  assert.equal(productRoot.userData.threeMotionNodeId, 'node-root')
+  assert.equal(floor.userData.threeMotionNodeId, 'node-studio-floor')
+  assert.equal(floorMaterial.userData.threeMotionMaterialId, 'material-studio-matte-white')
+  assert.equal(runtime.getInteractionTarget()?.userData.threeMotionNodeId, 'node-root')
 })
 
 test('ThreeAdapter.applyDirty patches transforms and materials without rebuilding runtime children', async () => {
@@ -243,7 +322,7 @@ test('ThreeAdapter.applyDirty patches transforms and materials without rebuildin
   adapter.setSceneAssets(createRuntimeSourceAssets())
   await adapter.buildFromCanonical(originalScene)
 
-  const firstMesh = runtime.productRoot.children[0] as THREE.Mesh
+  const firstMesh = runtime.productRoot.children[0]?.children[0] as THREE.Mesh
   const firstMaterial = firstMesh.material as THREE.MeshStandardMaterial
   const editedScene = cloneSceneDoc(originalScene)
 
@@ -260,7 +339,7 @@ test('ThreeAdapter.applyDirty patches transforms and materials without rebuildin
 
   await adapter.applyDirty(diffSceneDocs(originalScene, editedScene), editedScene)
 
-  assert.equal(runtime.productRoot.children[0], firstMesh)
+  assert.equal(runtime.productRoot.children[0]?.children[0], firstMesh)
   assert.deepEqual(firstMesh.position.toArray(), [4, 5, 6])
   assert.equal(firstMaterial.roughness, 0.8)
   assert.equal(firstMaterial.metalness, 0.2)

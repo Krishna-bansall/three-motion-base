@@ -434,6 +434,18 @@ html, body, #root {
   margin-bottom: 14px;
 }
 
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.panel-title-row .panel-title {
+  margin-bottom: 0;
+}
+
 .panel-empty {
   font-size: 12px;
   color: var(--text-muted);
@@ -444,6 +456,77 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.studio-preset-btn,
+.studio-visibility-btn,
+.studio-object-select {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.studio-preset-btn {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.studio-object-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.studio-object-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 8px;
+}
+
+.studio-object-select {
+  min-width: 0;
+  height: 36px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  text-align: left;
+}
+
+.studio-object-select span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-visibility-btn {
+  width: 34px;
+  height: 36px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+}
+
+.studio-object-row.active .studio-object-select,
+.studio-preset-btn:hover,
+.studio-object-select:hover,
+.studio-visibility-btn:hover,
+.studio-visibility-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.studio-object-select .material-symbols-rounded,
+.studio-visibility-btn .material-symbols-rounded {
+  font-size: 18px;
 }
 
 /* ── Element Selector ── */
