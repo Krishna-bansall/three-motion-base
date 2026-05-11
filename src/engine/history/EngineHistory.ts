@@ -1,9 +1,11 @@
 import type { SceneDoc } from '../scene/types'
 import type { ViewSettings } from '../viewSettings'
+import type { ProjectDoc } from '../project/types'
 
 export interface EngineSnapshot {
   scene: SceneDoc | null
   viewSettings: ViewSettings
+  project?: ProjectDoc
 }
 
 const HISTORY_LIMIT = 100

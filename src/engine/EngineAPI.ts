@@ -8,7 +8,7 @@ import { loadGLTFFromFile, loadGLTFFromFiles, loadGLTFFromURL, type LoadedModel 
 import { patchMaterial, setNodeTRS } from './scene/mutations'
 import { cloneSceneDoc, createEmptySceneDoc } from './scene/snapshot'
 import { diffSceneDocs, isSceneDeltaEmpty } from './scene/diff'
-import type { NodeId, Quat, SceneDoc } from './scene/types'
+import type { NodeId, Quat, SceneDoc, SceneNode } from './scene/types'
 import { eulerToQuaternionTuple, quaternionToEulerXYZ } from './scene/transformMath'
 import type {
   EnvironmentPreview,
@@ -21,6 +21,15 @@ import { ThreeAdapter } from './runtime/three/ThreeAdapter'
 import { convertCanonicalToBackendSchema } from './runtime/conversion/canonicalToBackend'
 import { EngineHistory, type EngineSnapshot } from './history/EngineHistory'
 import {
+  applyLookPreset as applyProjectLookPreset,
+  applyStudioPreset as applyProjectStudioPreset,
+  cloneProjectDoc,
+  createDefaultProject,
+  getLookPresets,
+  replaceProductSlotAsset,
+} from './project/document'
+import type { LookPreset, LookPresetId, ProjectDoc, StudioPresetId } from './project/types'
+import {
   buildConsoleState,
   buildRuntimeStateGraph,
   buildSceneSnapshot,
@@ -28,6 +37,7 @@ import {
   publishHasModel,
   publishHistoryAvailability,
   publishLoading,
+  publishStudioSetupObjects,
   publishTrackedObjectTransform,
   publishViewSettings,
   readViewSettingsFromStore,
@@ -35,6 +45,7 @@ import {
 } from './store/engineStateBridge'
 import {
   areViewSettingsEqual,
+  applyProjectLookToViewSettings,
   createDefaultViewSettings,
   updateViewSettings as updateSharedViewSettings,
 } from './viewSettings'
@@ -60,7 +71,10 @@ declare global {
 }
 export class EngineAPI {
   private readonly runtime: RuntimeAdapter
+  private currentProject: ProjectDoc = createDefaultProject()
   private currentScene: SceneDoc | null = null
+  private currentProductScene: SceneDoc | null = null
+  private currentPreviewScene: SceneDoc | null = null
   private currentAssets: LoadedModel['runtimeAssets'] | null = null
   private readonly history = new EngineHistory()
 
@@ -170,6 +184,47 @@ export class EngineAPI {
     })
   }
 
+  getLookPresets(): LookPreset[] {
+    return getLookPresets()
+  }
+
+  applyLookPreset(presetId: LookPresetId): void {
+    const nextProject = applyProjectLookPreset(this.currentProject, presetId)
+    const look = nextProject.look
+
+    this.currentProject = nextProject
+    this.setViewSettings(applyProjectLookToViewSettings(readViewSettingsFromStore(), look))
+  }
+
+  async applyStudioPreset(presetId: StudioPresetId): Promise<void> {
+    const nextProject = applyProjectStudioPreset(this.currentProject, presetId)
+    const nextScene = this.composeCanonicalProjectScene(nextProject, this.currentProductScene)
+    const previous = this.currentScene ? cloneSceneDoc(this.currentScene) : createEmptySceneDoc()
+
+    this.currentProject = nextProject
+    this.currentScene = nextScene
+
+    if (this.currentAssets) {
+      this.currentAssets = {
+        ...this.currentAssets,
+        canonicalScene: cloneSceneDoc(nextScene),
+      }
+      this.runtime.setSceneAssets(this.currentAssets)
+    }
+
+    const delta = diffSceneDocs(previous, nextScene)
+    if (isSceneDeltaEmpty(delta)) {
+      await this.runtime.buildFromCanonical(nextScene)
+    } else {
+      await this.runtime.applyDirty(delta, nextScene)
+    }
+
+    publishStudioSetupObjects(this.currentProject)
+    publishEntities(this.currentScene)
+    publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
+    this.commitCurrentSnapshot()
+  }
+
   setTransform(
     nodeId: NodeId,
     t: Partial<{
@@ -201,6 +256,65 @@ export class EngineAPI {
         s: [t.sx ?? node.s[0], t.sy ?? node.s[1], t.sz ?? node.s[2]],
       })
     })
+  }
+
+  previewTransform(
+    nodeId: NodeId,
+    t: Partial<{
+      px: number; py: number; pz: number
+      rx: number; ry: number; rz: number
+      sx: number; sy: number; sz: number
+    }>,
+  ): void {
+    if (!this.currentScene) return
+
+    const previous = this.currentPreviewScene ?? this.currentScene
+    const next = cloneSceneDoc(this.currentScene)
+    const node = next.nodes[nodeId]
+    if (!node) return
+
+    const hasRotationUpdate = t.rx !== undefined || t.ry !== undefined || t.rz !== undefined
+    const nextRotation = hasRotationUpdate
+      ? (() => {
+          const [rx, ry, rz] = quaternionToEulerXYZ(node.r)
+          const nextEuler: [number, number, number] = [
+            t.rx ?? rx,
+            t.ry ?? ry,
+            t.rz ?? rz,
+          ]
+          return eulerToQuaternionTuple(...nextEuler)
+        })()
+      : [...node.r] as Quat
+
+    setNodeTRS(next, nodeId, {
+      t: [t.px ?? node.t[0], t.py ?? node.t[1], t.pz ?? node.t[2]],
+      r: nextRotation,
+      s: [t.sx ?? node.s[0], t.sy ?? node.s[1], t.sz ?? node.s[2]],
+    })
+
+    const delta = diffSceneDocs(previous, next)
+    this.currentPreviewScene = next
+
+    if (isSceneDeltaEmpty(delta)) {
+      return
+    }
+
+    void this.runtime.applyDirty(delta, next)
+    publishTrackedObjectTransform(next, this.getTrackedProductRootNodeId())
+  }
+
+  clearPreviewTransform(): void {
+    if (!this.currentScene || !this.currentPreviewScene) return
+
+    const delta = diffSceneDocs(this.currentPreviewScene, this.currentScene)
+    this.currentPreviewScene = null
+
+    if (isSceneDeltaEmpty(delta)) {
+      return
+    }
+
+    void this.runtime.applyDirty(delta, this.currentScene)
+    publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
   }
 
   setMaterial(
@@ -305,6 +419,10 @@ export class EngineAPI {
     return this.currentScene ? cloneSceneDoc(this.currentScene) : null
   }
 
+  getProjectSnapshot(): ProjectDoc {
+    return cloneProjectDoc(this.currentProject)
+  }
+
   getRuntimeStateGraph(): RuntimeStateGraph {
     const runtimeGraph = this.currentScene
       ? this.runtime.getRuntimeDebugGraph(this.currentScene)
@@ -392,31 +510,88 @@ export class EngineAPI {
 
     try {
       const model = await loader()
-      await this.clearModel()
-      this.currentScene = cloneSceneDoc(model.canonicalScene)
-      this.currentAssets = model.runtimeAssets
-      this.runtime.setSceneAssets(model.runtimeAssets)
+      const nextProject = replaceProductSlotAsset(this.currentProject, {
+        uri: model.source.reference.uri,
+        rootNodeId: model.source.rootNodeId,
+      })
+      const nextScene = this.composeCanonicalProjectScene(nextProject, model.canonicalScene)
+      const nextAssets = {
+        ...model.runtimeAssets,
+        canonicalScene: cloneSceneDoc(nextScene),
+      }
+      this.currentProject = nextProject
+      this.currentScene = nextScene
+      this.currentProductScene = cloneSceneDoc(model.canonicalScene)
+      this.currentPreviewScene = null
+      this.currentAssets = nextAssets
+      this.runtime.setSceneAssets(nextAssets)
       await this.runtime.buildFromCanonical(this.currentScene)
       await this.runtime.setViewSettings(readViewSettingsFromStore())
 
       publishHasModel(true)
+      publishStudioSetupObjects(this.currentProject)
       publishEntities(this.currentScene)
-      publishTrackedObjectTransform(this.currentScene)
+      publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
       this.initializeHistory()
     } finally {
       publishLoading(false)
     }
   }
 
-  private async clearModel(): Promise<void> {
-    this.currentScene = null
-    this.currentAssets = null
-    this.runtime.setSceneAssets(null)
-    await this.runtime.buildFromCanonical(createEmptySceneDoc())
-    publishHasModel(false)
-    publishEntities(null)
-    publishTrackedObjectTransform(null)
-    this.resetHistory()
+  private composeCanonicalProjectScene(project: ProjectDoc, importedScene: SceneDoc | null): SceneDoc {
+    const scene = createEmptySceneDoc()
+    const primarySlotId = project.studioScene.primaryProductSlotId
+    const primarySlot = project.studioScene.productSlots[primarySlotId]
+    const studioRootId: NodeId = 'node-studio-root'
+
+    scene.roots.push(studioRootId)
+    scene.nodes[studioRootId] = createProjectNode({
+      id: studioRootId,
+      parentId: null,
+      name: project.studioScene.name,
+      children: [
+        primarySlot.nodeId,
+        project.studioScene.renderCameraNodeId,
+        ...Object.values(project.studioScene.studioGeometry).map((object) => object.nodeId),
+      ],
+    })
+    scene.nodes[primarySlot.nodeId] = createProjectNode({
+      id: primarySlot.nodeId,
+      parentId: studioRootId,
+      name: primarySlot.name,
+      children: importedScene ? [...importedScene.roots] : [],
+    })
+    scene.nodes[project.studioScene.renderCameraNodeId] = createProjectNode({
+      id: project.studioScene.renderCameraNodeId,
+      parentId: studioRootId,
+      name: 'Render Camera',
+      children: [],
+      t: [0, 0.8, 4],
+    })
+
+    for (const object of Object.values(project.studioScene.studioGeometry)) {
+      scene.nodes[object.nodeId] = createProjectNode({
+        id: object.nodeId,
+        parentId: studioRootId,
+        name: object.name,
+        children: [],
+        visible: object.visible,
+      })
+    }
+
+    if (importedScene) {
+      for (const [nodeId, node] of Object.entries(importedScene.nodes)) {
+        scene.nodes[nodeId] = {
+          ...structuredClone(node),
+          parentId: importedScene.roots.includes(nodeId) ? primarySlot.nodeId : node.parentId,
+        }
+      }
+
+      scene.meshes = structuredClone(importedScene.meshes)
+      scene.materials = structuredClone(importedScene.materials)
+    }
+
+    return scene
   }
 
   private applySceneMutation(mutator: (scene: SceneDoc) => void): void {
@@ -432,7 +607,7 @@ export class EngineAPI {
 
     void this.runtime.applyDirty(delta, this.currentScene)
     publishEntities(this.currentScene)
-    publishTrackedObjectTransform(this.currentScene)
+    publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
     this.commitCurrentSnapshot()
   }
 
@@ -440,6 +615,13 @@ export class EngineAPI {
     const previous = readViewSettingsFromStore()
     const next = updateSharedViewSettings(previous, mutator)
 
+    this.setViewSettings(next, previous)
+  }
+
+  private setViewSettings(
+    next: EngineSnapshot['viewSettings'],
+    previous: EngineSnapshot['viewSettings'] = readViewSettingsFromStore(),
+  ): void {
     if (areViewSettingsEqual(previous, next)) return
 
     publishViewSettings(next)
@@ -458,7 +640,7 @@ export class EngineAPI {
       r: trs.r,
       s: trs.s,
     })
-    publishTrackedObjectTransform(this.currentScene)
+    publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
   }
 
   private beginTransformHistory(): void {
@@ -487,11 +669,6 @@ export class EngineAPI {
     this.publishHistoryState()
   }
 
-  private resetHistory(): void {
-    this.history.reset()
-    this.publishHistoryState()
-  }
-
   private publishHistoryState(): void {
     publishHistoryAvailability(this.canUndo(), this.canRedo())
   }
@@ -500,19 +677,24 @@ export class EngineAPI {
     return {
       scene: this.currentScene ? cloneSceneDoc(this.currentScene) : null,
       viewSettings: readViewSettingsFromStore(),
+      project: cloneProjectDoc(this.currentProject),
     }
   }
 
   private async applySnapshot(snapshot: EngineSnapshot): Promise<void> {
     this.history.beginApplyingHistory()
     try {
+      this.currentProject = snapshot.project
+        ? cloneProjectDoc(snapshot.project)
+        : createDefaultProject()
       this.currentScene = snapshot.scene ? cloneSceneDoc(snapshot.scene) : null
       this.runtime.setSceneAssets(this.currentAssets)
       await this.runtime.buildFromCanonical(this.currentScene ?? createEmptySceneDoc())
       await this.runtime.setViewSettings(snapshot.viewSettings)
       publishViewSettings(snapshot.viewSettings)
+      publishStudioSetupObjects(this.currentProject)
       publishEntities(this.currentScene)
-      publishTrackedObjectTransform(this.currentScene)
+      publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
     } finally {
       this.history.endApplyingHistory()
     }
@@ -521,6 +703,7 @@ export class EngineAPI {
   private areSnapshotsEqual(a: EngineSnapshot, b: EngineSnapshot): boolean {
     return (
       JSON.stringify(a.scene) === JSON.stringify(b.scene)
+      && JSON.stringify(a.project) === JSON.stringify(b.project)
       && areViewSettingsEqual(a.viewSettings, b.viewSettings)
     )
   }
@@ -541,6 +724,11 @@ export class EngineAPI {
     return this.history.getRedoDepth()
   }
 
+  private getTrackedProductRootNodeId(): NodeId | null {
+    const slotId = this.currentProject.studioScene.primaryProductSlotId
+    return this.currentProject.studioScene.productSlots[slotId]?.asset?.rootNodeId ?? null
+  }
+
   private getConsoleState(): object {
     return buildConsoleState({
       hasCanonicalScene: Boolean(this.currentScene),
@@ -553,5 +741,25 @@ export class EngineAPI {
       transformMode: this.getTransformGizmoMode(),
       pathTracingReadiness: this.getPathTracingReadinessReport(),
     })
+  }
+}
+
+function createProjectNode(params: {
+  id: NodeId
+  parentId: NodeId | null
+  name: string
+  children: NodeId[]
+  t?: [number, number, number]
+  visible?: boolean
+}): SceneNode {
+  return {
+    id: params.id,
+    parentId: params.parentId,
+    children: params.children,
+    name: params.name,
+    t: params.t ?? [0, 0, 0],
+    r: [0, 0, 0, 1],
+    s: [1, 1, 1],
+    visible: params.visible ?? true,
   }
 }

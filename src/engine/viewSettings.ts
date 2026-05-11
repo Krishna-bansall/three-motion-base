@@ -23,6 +23,12 @@ export interface ViewSettings {
   autoRotateSpeed: number
 }
 
+export interface ViewSettingsLook {
+  exposure: number
+  bloom: BloomSettings
+  cinematic: CinematicSettings
+}
+
 export function createDefaultViewSettings(): ViewSettings {
   return {
     activeHDRI: 'studio',
@@ -75,4 +81,15 @@ export function updateViewSettings(
   const next = cloneViewSettings(previous)
   mutator(next)
   return next
+}
+
+export function applyProjectLookToViewSettings(
+  previous: ViewSettings,
+  look: ViewSettingsLook,
+): ViewSettings {
+  return updateViewSettings(previous, (next) => {
+    next.exposure = look.exposure
+    next.bloom = { ...look.bloom }
+    next.cinematic = { ...look.cinematic }
+  })
 }

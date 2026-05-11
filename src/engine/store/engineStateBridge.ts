@@ -1,4 +1,10 @@
-import { useEngineStore, type EntityInfo, type TrackedObjectTransform } from '../../store/useEngineStore'
+import {
+  useEngineStore,
+  type EntityInfo,
+  type StudioSetupObjectInfo,
+  type TrackedObjectTransform,
+} from '../../store/useEngineStore'
+import type { ProjectDoc } from '../project/types'
 import type { RuntimeDebugGraph, TransformGizmoMode } from '../runtime/types'
 import type { SceneDoc } from '../scene/types'
 import { quaternionToEulerXYZ, radiansToDegrees } from '../scene/transformMath'
@@ -93,8 +99,27 @@ export function publishLoading(isLoading: boolean): void {
   useEngineStore.getState().setLoading(isLoading)
 }
 
-export function publishTrackedObjectTransform(scene: SceneDoc | null): void {
-  useEngineStore.getState().setTrackedObjectTransform(buildTrackedObjectTransform(scene))
+export function publishTrackedObjectTransform(scene: SceneDoc | null, nodeId?: string | null): void {
+  useEngineStore.getState().setTrackedObjectTransform(buildTrackedObjectTransform(scene, nodeId))
+}
+
+export function publishStudioSetupObjects(project: ProjectDoc): void {
+  const objects: StudioSetupObjectInfo[] = Object.values(project.studioScene.studioGeometry)
+    .map((object) => ({
+      id: object.id,
+      nodeId: object.nodeId,
+      name: object.name,
+      kind: object.kind,
+      visible: object.visible,
+      editable: {
+        transform: [...object.editable.transform],
+        material: object.editable.material,
+        visibility: object.editable.visibility,
+        animationTarget: object.editable.animationTarget,
+      },
+    }))
+
+  useEngineStore.getState().setStudioSetupObjects(objects)
 }
 
 export function publishEntities(scene: SceneDoc | null): void {
@@ -199,12 +224,15 @@ export function buildConsoleState(params: ConsoleStateParams): object {
   }
 }
 
-function buildTrackedObjectTransform(scene: SceneDoc | null): TrackedObjectTransform | null {
+function buildTrackedObjectTransform(
+  scene: SceneDoc | null,
+  trackedNodeId?: string | null,
+): TrackedObjectTransform | null {
   if (!scene) {
     return null
   }
 
-  const rootNodeId = scene.roots[0]
+  const rootNodeId = trackedNodeId ?? scene.roots[0]
   if (!rootNodeId) {
     return null
   }

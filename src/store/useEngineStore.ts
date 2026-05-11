@@ -31,6 +31,20 @@ export interface TrackedObjectTransform {
   distanceFromOrigin: number
 }
 
+export interface StudioSetupObjectInfo {
+  id: string
+  nodeId: string
+  name: string
+  kind: string
+  visible: boolean
+  editable: {
+    transform: string[]
+    material: boolean
+    visibility: boolean
+    animationTarget: boolean
+  }
+}
+
 export interface EngineState {
   // ── Model ──
   isLoading: boolean
@@ -39,6 +53,8 @@ export interface EngineState {
   canUndo: boolean
   canRedo: boolean
   trackedObjectTransform: TrackedObjectTransform | null
+  studioSetupObjects: StudioSetupObjectInfo[]
+  selectedStudioObjectNodeId: string | null
 
   // ── Lighting ──
   activeHDRI: HDRIPreset
@@ -58,6 +74,8 @@ export interface EngineState {
   setHasModel: (v: boolean) => void
   setHistoryAvailability: (history: { canUndo: boolean; canRedo: boolean }) => void
   setTrackedObjectTransform: (transform: TrackedObjectTransform | null) => void
+  setStudioSetupObjects: (objects: StudioSetupObjectInfo[]) => void
+  setSelectedStudioObjectNodeId: (nodeId: string | null) => void
   setActiveHDRI: (h: HDRIPreset) => void
   setExposure: (v: number) => void
   setBloom: (b: BloomSettings) => void
@@ -73,6 +91,8 @@ export const useEngineStore = create<EngineState>((set) => ({
   canUndo: false,
   canRedo: false,
   trackedObjectTransform: null,
+  studioSetupObjects: [],
+  selectedStudioObjectNodeId: null,
 
   ...createDefaultViewSettings(),
 
@@ -81,6 +101,8 @@ export const useEngineStore = create<EngineState>((set) => ({
   setHasModel: (v) => set({ hasModel: v }),
   setHistoryAvailability: ({ canUndo, canRedo }) => set({ canUndo, canRedo }),
   setTrackedObjectTransform: (transform) => set({ trackedObjectTransform: transform }),
+  setStudioSetupObjects: (objects) => set({ studioSetupObjects: objects }),
+  setSelectedStudioObjectNodeId: (nodeId) => set({ selectedStudioObjectNodeId: nodeId }),
   setActiveHDRI: (h) => set({ activeHDRI: h }),
   setExposure: (v) => set({ exposure: v }),
   setBloom: (b) => set({ bloom: b }),

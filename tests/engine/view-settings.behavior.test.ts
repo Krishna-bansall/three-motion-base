@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  applyProjectLookToViewSettings,
   areViewSettingsEqual,
   cloneViewSettings,
   createDefaultViewSettings,
@@ -64,4 +65,35 @@ test('updateViewSettings returns a cloned next value without mutating the previo
       filmGrain: 0.05,
     },
   })
+})
+
+test('applyProjectLookToViewSettings maps Look values without changing environment or turntable settings', () => {
+  const previous = {
+    ...createDefaultViewSettings(),
+    activeHDRI: 'moody' as const,
+    autoRotate: true,
+    autoRotateSpeed: 0.8,
+  }
+
+  const next = applyProjectLookToViewSettings(previous, {
+    id: 'look-test',
+    name: 'Test Look',
+    exposure: 1.4,
+    bloom: { strength: 0.5, radius: 0.4, threshold: 0.7 },
+    cinematic: {
+      vignette: 0.2,
+      vignetteEnabled: false,
+      chromaticAberration: 0.01,
+      filmGrain: 0.02,
+      colorTemperature: -0.3,
+    },
+  })
+
+  assert.equal(next.activeHDRI, 'moody')
+  assert.equal(next.autoRotate, true)
+  assert.equal(next.autoRotateSpeed, 0.8)
+  assert.equal(next.exposure, 1.4)
+  assert.deepEqual(next.bloom, { strength: 0.5, radius: 0.4, threshold: 0.7 })
+  assert.equal(next.cinematic.colorTemperature, -0.3)
+  assert.equal(previous.exposure, 1)
 })
