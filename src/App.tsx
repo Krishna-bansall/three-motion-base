@@ -13,6 +13,7 @@ import { Viewport } from './ui/Viewport'
 import { DragDropZone } from './ui/DragDropZone'
 import { MaterialPanel } from './ui/panels/MaterialPanel'
 import { LightingPanel } from './ui/panels/LightingPanel'
+import { StudioPanel } from './ui/panels/StudioPanel'
 import { ExportPanel } from './ui/panels/ExportPanel'
 import { FiltersPanel } from './ui/panels/FiltersPanel'
 
@@ -59,6 +60,7 @@ function App() {
           </h1>
         </div>
         <div className="sidebar-panels">
+          <StudioPanel engine={engine} />
           <LightingPanel engine={engine} />
           <FiltersPanel engine={engine} />
           <MaterialPanel engine={engine} />

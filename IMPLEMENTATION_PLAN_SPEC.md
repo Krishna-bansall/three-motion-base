@@ -128,11 +128,9 @@ Three-specific fields (`renderer`, `scene`, `postProcessing`, `productRoot`, etc
 ## Phase 0: Spec + contracts (short, mandatory)
 
 Deliverables:
-- Update `SPEC.md` to remove contradictions:
-  - Engine owns canonical graph.
-  - Renderer swap means adapter swap, not engine rewrite.
-  - Fix `addComponent` pseudocode argument order.
-  - Clarify PNG export behavior (current in-place resize vs OffscreenCanvas optional).
+- Document canonical graph ownership (engine owns it).
+- Renderer swap means adapter swap, not engine rewrite.
+- Clarify PNG export behavior (current in-place resize).
 - Add this plan doc to repo.
 
 Acceptance:
@@ -255,10 +253,9 @@ Constraints:
 - Keep Three runtime behavior intact for now.
 
 Deliver:
-1) Updated SPEC.md with clarified architecture and corrected sync pseudocode.
-2) New canonical scene graph types + minimal mutation/snapshot helpers.
-3) Loader bridge that produces canonical state on model load.
-4) Short validation notes on smoke checklist items that were run.
+1) Canonical scene graph types + minimal mutation/snapshot helpers under `src/engine/scene`.
+2) Loader bridge that produces canonical state on model load.
+3) Short validation notes on smoke checklist items that were run.
 ```
 
 ---

@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { EngineAPI } from '../../src/engine/EngineAPI.ts'
 import { useEngineStore } from '../../src/store/useEngineStore.ts'
-import { cloneSceneDoc, createEmptySceneDoc } from '../../src/engine/scene/snapshot.ts'
+import { cloneSceneDoc } from '../../src/engine/scene/snapshot.ts'
 import { cloneViewSettings, createDefaultViewSettings } from '../../src/engine/viewSettings.ts'
 import type { RuntimeAdapter } from '../../src/engine/runtime/RuntimeAdapter.ts'
 import type {
@@ -99,6 +99,9 @@ function resetStore(): void {
     canUndo: false,
     canRedo: false,
     trackedObjectTransform: null,
+    studioSetupObjects: [],
+    selectedStudioObjectNodeId: null,
+    activeLookId: 'look-studio-neutral',
     ...createDefaultViewSettings(),
   })
 }
@@ -226,7 +229,7 @@ test('EngineAPI.dispose unregisters runtime callbacks and unmounts runtime', () 
   assert.equal(runtime.unmountCount, 1)
 })
 
-test('loadModel loads a scene, clears runtime first, and publishes canonical entities', async () => {
+test('loadModel loads a scene into the project studio shell and publishes canonical entities', async () => {
   const { engine, runtime } = createMountedEngine()
 
   await withMockedLoader(
@@ -244,15 +247,160 @@ test('loadModel loads a scene, clears runtime first, and publishes canonical ent
   assert.equal(useEngineStore.getState().entities.length, 1)
   assert.equal(useEngineStore.getState().entities[0]?.name, 'sample-root-mesh')
   assert.deepEqual(useEngineStore.getState().trackedObjectTransform?.position, [0, 0, 0])
-  assert.equal(runtime.sceneAssetsHistory.length, 2)
-  assert.equal(runtime.sceneAssetsHistory[0], null)
-  assert.ok(runtime.sceneAssetsHistory[1], 'loaded assets should be stored on the runtime')
-  assert.equal(runtime.buildCalls.length, 2)
-  assert.deepEqual(runtime.buildCalls[0], createEmptySceneDoc())
-  assert.equal(runtime.buildCalls[1].roots.length, 1)
-  assert.equal(runtime.buildCalls[1].materials['material-0']?.envMapIntensity, 1.2)
+  assert.equal(runtime.sceneAssetsHistory.length, 1)
+  assert.ok(runtime.sceneAssetsHistory[0], 'loaded assets should be stored on the runtime')
+  assert.equal(runtime.buildCalls.length, 1)
+  assert.deepEqual(runtime.buildCalls[0].roots, ['node-studio-root'])
+  assert.equal(runtime.buildCalls[0].materials['material-0']?.envMapIntensity, 1.2)
   assert.equal(useEngineStore.getState().canUndo, false)
   assert.equal(useEngineStore.getState().canRedo, false)
+})
+
+test('EngineAPI keeps a studio project before import and replaces only the primary product slot', async () => {
+  const { engine } = createMountedEngine()
+  const initialProject = engine.getProjectSnapshot()
+
+  assert.equal(initialProject.studioScene.name, 'Studio Scene')
+  assert.equal(
+    initialProject.studioScene.productSlots[initialProject.studioScene.primaryProductSlotId].asset,
+    null,
+  )
+
+  await withMockedLoader(
+    async () => ({ scene: createStubGLTFScene('first-product') }),
+    async () => {
+      await engine.loadModel('/models/first.glb')
+    },
+  )
+
+  const afterFirstImport = engine.getProjectSnapshot()
+  const sceneAfterFirstImport = engine.getCanonicalSceneSnapshot()
+  const primarySlotId = afterFirstImport.studioScene.primaryProductSlotId
+  const primarySlotNodeId = afterFirstImport.studioScene.productSlots[primarySlotId].nodeId
+  const environmentBeforeReplacement = structuredClone(afterFirstImport.studioScene.environment)
+  const lookBeforeReplacement = structuredClone(afterFirstImport.look)
+  const mainShotBeforeReplacement = structuredClone(afterFirstImport.shots['shot-main'])
+
+  assert.ok(sceneAfterFirstImport)
+  assert.deepEqual(sceneAfterFirstImport.roots, ['node-studio-root'])
+  assert.ok(sceneAfterFirstImport.nodes['node-studio-root']?.children.includes(primarySlotNodeId))
+  assert.deepEqual(sceneAfterFirstImport.nodes[primarySlotNodeId]?.children, ['node-0'])
+  assert.equal(sceneAfterFirstImport.nodes['node-0']?.parentId, primarySlotNodeId)
+  assert.equal(sceneAfterFirstImport.nodes['node-1']?.parentId, 'node-0')
+  assert.deepEqual(afterFirstImport.studioScene.productSlots[primarySlotId].asset, {
+    uri: '/models/first.glb',
+    rootNodeId: 'node-0',
+  })
+
+  await withMockedLoader(
+    async () => ({ scene: createStubGLTFScene('second-product') }),
+    async () => {
+      await engine.loadModel('/models/second.glb')
+    },
+  )
+
+  const afterReplacement = engine.getProjectSnapshot()
+  const sceneAfterReplacement = engine.getCanonicalSceneSnapshot()
+
+  assert.deepEqual(afterReplacement.studioScene.productSlots[primarySlotId].asset, {
+    uri: '/models/second.glb',
+    rootNodeId: 'node-0',
+  })
+  assert.ok(sceneAfterReplacement)
+  assert.equal(sceneAfterReplacement.nodes[primarySlotNodeId]?.children.length, 1)
+  assert.equal(sceneAfterReplacement.nodes[primarySlotNodeId]?.children[0], 'node-0')
+  assert.equal(sceneAfterReplacement.nodes['node-0']?.name, 'ProductRoot')
+  assert.equal(sceneAfterReplacement.nodes['node-1']?.name, 'second-product')
+  assert.deepEqual(afterReplacement.studioScene.environment, environmentBeforeReplacement)
+  assert.deepEqual(afterReplacement.look, lookBeforeReplacement)
+  assert.deepEqual(afterReplacement.shots['shot-main'], mainShotBeforeReplacement)
+})
+
+test('EngineAPI applies Look presets through project state and runtime view settings', () => {
+  const { engine, runtime } = createMountedEngine()
+  const initialViewSettingsCallCount = runtime.viewSettingsCalls.length
+
+  engine.applyLookPreset('warm-hero')
+
+  assert.deepEqual(engine.getLookPresets().map((preset) => preset.id), [
+    'look-studio-neutral',
+    'look-warm-hero',
+    'look-cool-contrast',
+  ])
+  assert.equal(engine.getProjectSnapshot().look.id, 'look-warm-hero')
+  assert.equal(useEngineStore.getState().exposure, 1.25)
+  assert.deepEqual(useEngineStore.getState().bloom, {
+    strength: 0.45,
+    radius: 0.7,
+    threshold: 0.82,
+  })
+  assert.deepEqual(useEngineStore.getState().cinematic, {
+    vignette: 0.42,
+    vignetteEnabled: true,
+    chromaticAberration: 0.002,
+    filmGrain: 0.012,
+    colorTemperature: 0.28,
+  })
+  assert.equal(runtime.viewSettingsCalls.length, initialViewSettingsCallCount + 1)
+  assert.equal(runtime.viewSettingsCalls.at(-1)?.exposure, 1.25)
+})
+
+test('EngineAPI keeps Studio Scene HDRI in project state and runtime view settings', async () => {
+  const { engine, runtime } = createMountedEngine()
+  const initialViewSettingsCallCount = runtime.viewSettingsCalls.length
+
+  await engine.setHDRI('moody')
+
+  assert.equal(engine.getProjectSnapshot().studioScene.environment.hdriId, 'moody')
+  assert.equal(useEngineStore.getState().activeHDRI, 'moody')
+  assert.equal(runtime.viewSettingsCalls.length, initialViewSettingsCallCount + 1)
+  assert.equal(runtime.viewSettingsCalls.at(-1)?.activeHDRI, 'moody')
+})
+
+test('EngineAPI applies a studio preset before import and preserves it through replacement', async () => {
+  const { engine } = createMountedEngine()
+
+  await engine.applyStudioPreset('soft-box-plinth')
+
+  assert.deepEqual(useEngineStore.getState().studioSetupObjects.map((object) => object.nodeId), [
+    'node-studio-floor',
+    'node-studio-backdrop',
+    'node-studio-plinth',
+  ])
+  assert.deepEqual(
+    useEngineStore.getState().studioSetupObjects.map((object) => object.editable.animationTarget),
+    [false, false, false],
+  )
+  assert.equal(engine.getCanonicalSceneSnapshot()?.nodes['node-studio-floor']?.visible, true)
+  assert.equal(engine.getCanonicalSceneSnapshot()?.nodes['node-studio-floor']?.meshId, 'mesh-studio-geometry-floor')
+  assert.equal(
+    engine.getCanonicalSceneSnapshot()?.nodes['node-studio-floor']?.materialId,
+    'material-studio-matte-white',
+  )
+  assert.equal(
+    engine.getCanonicalSceneSnapshot()?.meshes['mesh-studio-geometry-plinth']?.source.uri,
+    'builtin:studio/plinth',
+  )
+
+  await withMockedLoader(
+    async () => ({ scene: createStubGLTFScene('preset-product') }),
+    async () => {
+      await engine.loadModel('/models/preset-product.glb')
+    },
+  )
+
+  const projectAfterImport = engine.getProjectSnapshot()
+  const studioGeometryBeforeReplacement = structuredClone(projectAfterImport.studioScene.studioGeometry)
+
+  await withMockedLoader(
+    async () => ({ scene: createStubGLTFScene('preset-replacement') }),
+    async () => {
+      await engine.loadModel('/models/preset-replacement.glb')
+    },
+  )
+
+  assert.deepEqual(engine.getProjectSnapshot().studioScene.studioGeometry, studioGeometryBeforeReplacement)
+  assert.equal(engine.getCanonicalSceneSnapshot()?.nodes['node-studio-plinth']?.parentId, 'node-studio-root')
 })
 
 test('loadModelFromFile uses the shared load path and revokes its blob URL', async () => {
@@ -276,6 +424,13 @@ test('loadModelFromFile uses the shared load path and revokes its blob URL', asy
   assert.equal(useEngineStore.getState().hasModel, true)
   assert.equal(useEngineStore.getState().entities[0]?.name, 'file-root-mesh')
   assert.deepEqual(useEngineStore.getState().trackedObjectTransform?.position, [0, 0, 0])
+  assert.deepEqual(
+    engine.getProjectSnapshot().studioScene.productSlots['product-slot-primary'].asset,
+    {
+      uri: 'product.glb',
+      rootNodeId: 'node-0',
+    },
+  )
 })
 
 test('loadModelFromFiles uses the shared load path and revokes every blob URL', async () => {
@@ -303,6 +458,13 @@ test('loadModelFromFiles uses the shared load path and revokes every blob URL', 
   assert.equal(useEngineStore.getState().hasModel, true)
   assert.equal(useEngineStore.getState().entities[0]?.name, 'files-root-mesh')
   assert.deepEqual(useEngineStore.getState().trackedObjectTransform?.position, [0, 0, 0])
+  assert.deepEqual(
+    engine.getProjectSnapshot().studioScene.productSlots['product-slot-primary'].asset,
+    {
+      uri: 'scene.gltf',
+      rootNodeId: 'node-0',
+    },
+  )
 })
 
 test('failed replacement load keeps the previous scene active and clears loading state', async () => {
@@ -316,6 +478,7 @@ test('failed replacement load keeps the previous scene active and clears loading
   )
 
   const previousScene = engine.getCanonicalSceneSnapshot()
+  const previousProject = engine.getProjectSnapshot()
   const previousEntities = [...useEngineStore.getState().entities]
   const previousBuildCount = runtime.buildCalls.length
 
@@ -335,6 +498,7 @@ test('failed replacement load keeps the previous scene active and clears loading
   assert.equal(useEngineStore.getState().isLoading, false)
   assert.equal(useEngineStore.getState().hasModel, true)
   assert.deepEqual(engine.getCanonicalSceneSnapshot(), previousScene)
+  assert.deepEqual(engine.getProjectSnapshot(), previousProject)
   assert.deepEqual(useEngineStore.getState().entities, previousEntities)
   assert.equal(runtime.buildCalls.length, previousBuildCount)
 })
@@ -363,7 +527,7 @@ test('failed initial load leaves the engine empty and clears loading state', asy
   assert.equal(runtime.buildCalls.length, 0)
 })
 
-test('successful replacement load clears the old runtime scene before applying the new one', async () => {
+test('successful replacement load rebuilds directly from the next studio scene', async () => {
   const { engine, runtime } = createMountedEngine()
 
   await withMockedLoader(
@@ -380,8 +544,11 @@ test('successful replacement load clears the old runtime scene before applying t
     },
   )
 
-  assert.equal(runtime.buildCalls.length, 4)
-  assert.deepEqual(runtime.buildCalls[2], createEmptySceneDoc())
-  assert.equal(runtime.buildCalls[3].roots.length, 1)
+  assert.equal(runtime.buildCalls.length, 2)
+  assert.deepEqual(runtime.sceneAssetsHistory.map((assets) => assets?.sourceUri ?? null), [
+    '/models/first.glb',
+    '/models/second.glb',
+  ])
+  assert.deepEqual(runtime.buildCalls[1].roots, ['node-studio-root'])
   assert.equal(useEngineStore.getState().entities[0]?.name, 'second-root-mesh')
 })

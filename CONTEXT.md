@@ -75,6 +75,10 @@ Core rules:
 
 The canonical scene graph migration is the active architectural direction.
 
+The `codex-test-push` branch contains exploratory or partial motion/project implementation work. Treat that branch as non-authoritative for product requirements, issue refinement, and PRD creation unless a task explicitly asks to inspect or salvage it.
+
+New issue/PRD implementation branches created after `codex-test-push`, including `issue-33-project-studio-scene`, can be trusted by their own diffs, linked GitHub issues, PRDs, this context file, and explicit design decisions from the user. The sources of truth for planning remain GitHub issues, PRDs, this context file, and explicit design decisions.
+
 The migration plan in `IMPLEMENTATION_PLAN_SPEC.md` defines these phases:
 
 - Phase 0: Clarify specs and contracts.
@@ -86,14 +90,11 @@ The migration plan in `IMPLEMENTATION_PLAN_SPEC.md` defines these phases:
 
 ## Known Architecture Issues
 
-`ARCHITECTURE_ISSUES.md` tracks current mismatches between the intended architecture and implementation.
-
 Important known issues:
 
 - React UI still has direct Three.js usage in `src/ui/panels/LightingPanel.tsx`.
 - Engine and asset-loading internals still have Three.js coupling.
 - `EngineAPI` has historically depended on concrete renderer internals.
-- Spec snippets and export wording have needed alignment with implementation details.
 
 When working in these areas, preserve current UI behavior while moving coupling behind explicit engine/runtime boundaries.
 

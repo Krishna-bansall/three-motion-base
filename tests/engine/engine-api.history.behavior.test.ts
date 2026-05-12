@@ -113,6 +113,9 @@ function resetStore(): void {
     canUndo: false,
     canRedo: false,
     trackedObjectTransform: null,
+    studioSetupObjects: [],
+    selectedStudioObjectNodeId: null,
+    activeLookId: 'look-studio-neutral',
     ...createDefaultViewSettings(),
   })
 }
@@ -191,7 +194,7 @@ test('history batch collapses multiple material edits into one undo step', async
   assert.equal(didUndo, true)
   assert.equal(useEngineStore.getState().entities[0]?.roughness, initialEntity.roughness)
   assert.equal(useEngineStore.getState().entities[0]?.metalness, initialEntity.metalness)
-  assert.equal(runtime.buildCalls.length, 3)
+  assert.equal(runtime.buildCalls.length, 2)
 })
 
 test('nested history batches still produce one undo step', async () => {
@@ -241,6 +244,33 @@ test('transform interaction creates a single undo step for a gesture', async () 
   assert.deepEqual(useEngineStore.getState().trackedObjectTransform?.position, [0, 0, 0])
 })
 
+test('preview transforms update runtime state without mutating canonical scene or history', async () => {
+  const { engine, runtime } = await createLoadedEngine()
+  const originalScene = engine.getCanonicalSceneSnapshot()
+  assert.ok(originalScene)
+  const initialApplyDirtyCount = runtime.applyDirtyCalls.length
+
+  engine.previewTransform('node-0', {
+    py: 2,
+    ry: Math.PI / 2,
+  })
+
+  assert.deepEqual(engine.getCanonicalSceneSnapshot()?.nodes['node-0']?.t, originalScene.nodes['node-0']?.t)
+  assert.deepEqual(engine.getCanonicalSceneSnapshot()?.nodes['node-0']?.r, originalScene.nodes['node-0']?.r)
+  assert.equal(engine.getRuntimeStateGraph().history.undoDepth, 0)
+  assert.equal(useEngineStore.getState().canUndo, false)
+  assert.deepEqual(useEngineStore.getState().trackedObjectTransform?.position, [0, 2, 0])
+  assert.equal(runtime.applyDirtyCalls.length, initialApplyDirtyCount + 1)
+  assert.deepEqual(runtime.applyDirtyCalls.at(-1)?.nodes['node-0']?.t, [0, 2, 0])
+
+  engine.clearPreviewTransform()
+
+  assert.deepEqual(engine.getCanonicalSceneSnapshot()?.nodes['node-0']?.t, originalScene.nodes['node-0']?.t)
+  assert.equal(engine.getRuntimeStateGraph().history.undoDepth, 0)
+  assert.equal(runtime.applyDirtyCalls.length, initialApplyDirtyCount + 2)
+  assert.deepEqual(runtime.applyDirtyCalls.at(-1)?.nodes['node-0']?.t, [0, 0, 0])
+})
+
 test('undo and redo restore view settings and rebuild runtime from history snapshots', async () => {
   const { engine, runtime } = await createLoadedEngine()
   const initialBuildCount = runtime.buildCalls.length
@@ -269,6 +299,55 @@ test('undo and redo restore view settings and rebuild runtime from history snaps
   assert.equal(useEngineStore.getState().autoRotate, false)
   assert.equal(runtime.buildCalls.length, initialBuildCount + 3)
   assert.equal(runtime.viewSettingsCalls.length, initialViewSettingsCalls + 5)
+})
+
+test('look preset history restores project Look and runtime view settings', async () => {
+  const { engine } = await createLoadedEngine()
+
+  engine.applyLookPreset('warm-hero')
+
+  assert.equal(engine.getProjectSnapshot().look.id, 'look-warm-hero')
+  assert.equal(useEngineStore.getState().exposure, 1.25)
+  assert.equal(engine.getRuntimeStateGraph().history.undoDepth, 1)
+
+  await engine.undo()
+
+  assert.equal(engine.getProjectSnapshot().look.id, 'look-studio-neutral')
+  assert.equal(useEngineStore.getState().activeLookId, 'look-studio-neutral')
+  assert.equal(useEngineStore.getState().exposure, 1)
+
+  await engine.redo()
+
+  assert.equal(engine.getProjectSnapshot().look.id, 'look-warm-hero')
+  assert.equal(useEngineStore.getState().activeLookId, 'look-warm-hero')
+  assert.equal(useEngineStore.getState().exposure, 1.25)
+})
+
+test('look preset project changes publish active Look even when view settings are already equal', async () => {
+  const { engine, runtime } = await createLoadedEngine()
+  useEngineStore.setState({
+    exposure: 1.25,
+    bloom: {
+      strength: 0.45,
+      radius: 0.7,
+      threshold: 0.82,
+    },
+    cinematic: {
+      vignette: 0.42,
+      vignetteEnabled: true,
+      chromaticAberration: 0.002,
+      filmGrain: 0.012,
+      colorTemperature: 0.28,
+    },
+  })
+  const initialViewSettingsCalls = runtime.viewSettingsCalls.length
+
+  engine.applyLookPreset('warm-hero')
+
+  assert.equal(engine.getProjectSnapshot().look.id, 'look-warm-hero')
+  assert.equal(useEngineStore.getState().activeLookId, 'look-warm-hero')
+  assert.equal(runtime.viewSettingsCalls.length, initialViewSettingsCalls)
+  assert.equal(engine.getRuntimeStateGraph().history.undoDepth, 1)
 })
 
 test('equivalent nested view settings updates do not create history or runtime writes', async () => {

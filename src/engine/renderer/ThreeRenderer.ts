@@ -202,6 +202,11 @@ export class ThreeRenderer {
     return this.transformMode
   }
 
+  setInteractionTarget(target: THREE.Object3D): void {
+    this.transformControls.attach(target)
+    this.turntable?.setTarget(target)
+  }
+
   private syncTurntableState(): void {
     if (!this.turntable) return
     this.turntable.enabled = this.transformMode === null

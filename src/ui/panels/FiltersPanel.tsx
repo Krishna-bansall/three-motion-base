@@ -14,6 +14,8 @@ interface FiltersPanelProps {
 export function FiltersPanel({ engine }: FiltersPanelProps) {
   const bloom = useEngineStore((s) => s.bloom)
   const cinematic = useEngineStore((s) => s.cinematic)
+  const activeLookId = useEngineStore((s) => s.activeLookId)
+  const lookPresets = engine.getLookPresets()
   const rangeHistoryProps = {
     onPointerDown: () => engine.beginHistoryBatch(),
     onPointerUp: () => engine.endHistoryBatch(),
@@ -24,6 +26,19 @@ export function FiltersPanel({ engine }: FiltersPanelProps) {
   return (
     <div className="panel" id="filters-panel">
       <h3 className="panel-title">Filters</h3>
+
+      <label className="slider-label"><span>Look</span></label>
+      <div className="look-preset-selector">
+        {lookPresets.map((preset) => (
+          <button
+            key={preset.id}
+            className={`look-preset-btn ${activeLookId === preset.id ? 'active' : ''}`}
+            onClick={() => engine.applyLookPreset(preset.presetId)}
+          >
+            {preset.name}
+          </button>
+        ))}
+      </div>
 
       {/* ── Color Grading ── */}
       <label className="slider-label">

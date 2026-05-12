@@ -67,27 +67,16 @@ export class ThreeAdapter implements RuntimeAdapter {
     this.nodeObjects.clear()
     this.materialObjects.clear()
 
-    if (!this.sceneAssets || scene.roots.length === 0) {
+    if (scene.roots.length === 0) {
       this.activeRootNodeId = null
       return
     }
 
     const instance = this.createRuntimeSceneInstance(scene)
-    const templateRoot = instance.rootObject as THREE.Object3D
-
-    for (const child of [...templateRoot.children]) {
-      this.renderer.productRoot.add(child)
-    }
-
-    const rootNodeId = instance.rootNodeId || scene.roots[0]
-    if (rootNodeId) {
-      this.activeRootNodeId = rootNodeId
-      this.nodeObjects.set(rootNodeId, this.renderer.productRoot)
-      this.renderer.productRoot.userData.threeMotionNodeId = rootNodeId
-    }
+    const rootObject = instance.rootObject as THREE.Object3D
+    this.renderer.productRoot.add(rootObject)
 
     for (const [nodeId, object] of instance.nodeObjects.entries()) {
-      if (nodeId === rootNodeId) continue
       this.nodeObjects.set(nodeId, object as THREE.Object3D)
     }
 
@@ -96,6 +85,14 @@ export class ThreeAdapter implements RuntimeAdapter {
         materialId,
         materials as THREE.Material[],
       )
+    }
+
+    const interactionNodeId = this.resolveInteractionNodeId(scene, instance.rootNodeId)
+    const interactionObject = interactionNodeId ? this.nodeObjects.get(interactionNodeId) : null
+    this.activeRootNodeId = interactionNodeId
+
+    if (interactionObject) {
+      this.renderer.setInteractionTarget(interactionObject)
     }
 
     this.applyFullScene(scene)
@@ -225,15 +222,14 @@ export class ThreeAdapter implements RuntimeAdapter {
   }
 
   private createRuntimeSceneInstance(scene: SceneDoc): RuntimeSceneInstance {
-    if (!this.sceneAssets) {
-      throw new Error('Scene assets must be set before building the runtime scene')
+    if (this.sceneAssets?.source) {
+      return buildRuntimeSceneInstanceFromSource(scene, {
+        ...this.sceneAssets.source,
+        rootNodeId: this.sceneAssets.source.rootNodeId ?? this.sceneAssets.rootNodeId,
+      })
     }
 
-    if (this.sceneAssets.source) {
-      return buildRuntimeSceneInstanceFromSource(scene, this.sceneAssets.source)
-    }
-
-    return this.sceneAssets.instantiate()
+    return this.sceneAssets?.instantiate() ?? buildRuntimeSceneInstanceFromSource(scene)
   }
 
   private applyFullScene(scene: SceneDoc): void {
@@ -270,6 +266,16 @@ export class ThreeAdapter implements RuntimeAdapter {
       material.envMapIntensity = materialDef.envMapIntensity
       material.needsUpdate = true
     }
+  }
+
+  private resolveInteractionNodeId(scene: SceneDoc, fallbackRootNodeId: NodeId): NodeId | null {
+    const assetRootNodeId = this.sceneAssets?.rootNodeId
+
+    if (assetRootNodeId && scene.nodes[assetRootNodeId]) {
+      return assetRootNodeId
+    }
+
+    return fallbackRootNodeId || scene.roots[0] || null
   }
 }
 

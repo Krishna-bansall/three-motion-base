@@ -4,17 +4,34 @@ import type { RuntimeSceneInstance, RuntimeSceneSource } from '../types'
 
 export function buildRuntimeSceneInstanceFromSource(
   scene: SceneDoc,
-  source: RuntimeSceneSource,
+  source?: RuntimeSceneSource,
 ): RuntimeSceneInstance {
-  const templateRoot = source.templateRoot as THREE.Object3D
-  const rootObject = cloneTemplateObject(templateRoot)
+  const importedRootNodeId = source?.rootNodeId ?? ''
+  const importedRootObject = source
+    ? cloneTemplateObject(source.templateRoot as THREE.Object3D)
+    : new THREE.Group()
+  const importedNodeObjects = new Map<NodeId, object>()
   const nodeObjects = new Map<NodeId, object>()
   const materialObjects = new Map<string, object[]>()
-  const rootNodeId = source.rootNodeId ?? scene.roots[0] ?? ''
+  const rootNodeId = scene.roots[0] ?? importedRootNodeId
 
-  if (rootNodeId && scene.nodes[rootNodeId]) {
-    mapSceneNodeToObject(scene, rootNodeId, rootObject, nodeObjects, materialObjects)
+  if (importedRootNodeId && scene.nodes[importedRootNodeId]) {
+    mapImportedSceneNodeToObject(
+      scene,
+      importedRootNodeId,
+      importedRootObject,
+      importedNodeObjects,
+      materialObjects,
+    )
   }
+
+  const rootObject = rootNodeId && scene.nodes[rootNodeId]
+    ? buildCanonicalObject(scene, rootNodeId, {
+        importedNodeObjects,
+        nodeObjects,
+        materialObjects,
+      })
+    : new THREE.Group()
 
   return {
     rootNodeId,
@@ -40,7 +57,7 @@ function cloneTemplateObject(templateRoot: THREE.Object3D): THREE.Object3D {
   return clone
 }
 
-function mapSceneNodeToObject(
+function mapImportedSceneNodeToObject(
   scene: SceneDoc,
   nodeId: NodeId,
   object: THREE.Object3D,
@@ -53,22 +70,86 @@ function mapSceneNodeToObject(
   tagObject(nodeId, object)
   applySceneNodeState(node, object)
   nodeObjects.set(nodeId, object)
-
-  if (object instanceof THREE.Mesh && node.materialId) {
-    tagMaterialInstances(object.material, node.materialId)
-    const materials = Array.isArray(object.material) ? object.material : [object.material]
-    const nextMaterials = materialObjects.get(node.materialId) ?? []
-    nextMaterials.push(...materials)
-    materialObjects.set(node.materialId, nextMaterials)
-  }
+  collectMaterialObject(node, object, materialObjects)
 
   for (let index = 0; index < node.children.length; index += 1) {
     const childId = node.children[index]
     const childObject = object.children[index] as THREE.Object3D | undefined
     if (!childObject) continue
 
-    mapSceneNodeToObject(scene, childId, childObject, nodeObjects, materialObjects)
+    mapImportedSceneNodeToObject(scene, childId, childObject, nodeObjects, materialObjects)
   }
+}
+
+function buildCanonicalObject(
+  scene: SceneDoc,
+  nodeId: NodeId,
+  context: {
+    importedNodeObjects: Map<NodeId, object>
+    nodeObjects: Map<NodeId, object>
+    materialObjects: Map<string, object[]>
+  },
+): THREE.Object3D {
+  const node = scene.nodes[nodeId]
+  const importedObject = context.importedNodeObjects.get(nodeId) as THREE.Object3D | undefined
+  const object = importedObject ?? createObjectForNode(scene, node)
+
+  tagObject(nodeId, object)
+  applySceneNodeState(node, object)
+  context.nodeObjects.set(nodeId, object)
+  collectMaterialObject(node, object, context.materialObjects)
+
+  if (importedObject) {
+    for (const [importedNodeId, childObject] of context.importedNodeObjects.entries()) {
+      context.nodeObjects.set(importedNodeId, childObject)
+    }
+    return object
+  }
+
+  for (const childId of node.children) {
+    const child = scene.nodes[childId]
+    if (!child) continue
+
+    object.add(buildCanonicalObject(scene, childId, context))
+  }
+
+  return object
+}
+
+function createObjectForNode(scene: SceneDoc, node: SceneNode): THREE.Object3D {
+  const mesh = node.meshId ? scene.meshes[node.meshId] : undefined
+
+  if (!mesh) {
+    return new THREE.Group()
+  }
+
+  const material = createMaterial(scene, node.materialId)
+
+  switch (mesh.source.uri) {
+    case 'builtin:studio/floor':
+      return new THREE.Mesh(new THREE.CircleGeometry(3.2, 96), material)
+    case 'builtin:studio/backdrop':
+      return new THREE.Mesh(new THREE.BoxGeometry(5.4, 2.8, 0.12), material)
+    case 'builtin:studio/plinth':
+      return new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.82, 0.46, 64), material)
+    default:
+      return new THREE.Group()
+  }
+}
+
+function createMaterial(scene: SceneDoc, materialId: string | undefined): THREE.Material {
+  const material = materialId ? scene.materials[materialId] : undefined
+
+  if (!material) {
+    return new THREE.MeshStandardMaterial()
+  }
+
+  return new THREE.MeshStandardMaterial({
+    color: new THREE.Color(...material.baseColor),
+    roughness: material.roughness,
+    metalness: material.metalness,
+    envMapIntensity: material.envMapIntensity,
+  })
 }
 
 function applySceneNodeState(node: SceneNode, object: THREE.Object3D): void {
@@ -77,6 +158,24 @@ function applySceneNodeState(node: SceneNode, object: THREE.Object3D): void {
   object.position.set(...node.t)
   object.quaternion.set(...node.r)
   object.scale.set(...node.s)
+}
+
+function collectMaterialObject(
+  node: SceneNode,
+  object: THREE.Object3D,
+  materialObjects: Map<string, object[]>,
+): void {
+  if (!(object instanceof THREE.Mesh) || !node.materialId) return
+
+  tagMaterialInstances(object.material, node.materialId)
+  const materials = Array.isArray(object.material) ? object.material : [object.material]
+  const nextMaterials = materialObjects.get(node.materialId) ?? []
+  for (const material of materials) {
+    if (!nextMaterials.includes(material)) {
+      nextMaterials.push(material)
+    }
+  }
+  materialObjects.set(node.materialId, nextMaterials)
 }
 
 function tagObject(nodeId: NodeId, object: THREE.Object3D): void {
