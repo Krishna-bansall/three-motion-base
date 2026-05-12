@@ -51,6 +51,7 @@ class FakeRuntime implements RuntimeAdapter {
   }
   async exportPNG(): Promise<Blob> { return new Blob(['fake'], { type: 'image/png' }) }
   getEnvironmentPreviews(): EnvironmentPreview[] { return [] }
+  setRenderCamera(): void {}
   getRuntimeDebugGraph(scene: SceneDoc): RuntimeDebugGraph {
     void scene
     return this.runtimeGraph

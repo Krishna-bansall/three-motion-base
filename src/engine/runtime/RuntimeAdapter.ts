@@ -49,6 +49,8 @@ export interface RuntimeAdapter {
   exportPNG(scale: number): Promise<Blob>
   /** Returns available environment previews. */
   getEnvironmentPreviews(): EnvironmentPreview[]
+  /** Sets the active render camera from canonical camera state. */
+  setRenderCamera(nodeId: NodeId, fovDegrees: number, near: number, far: number): void
   /** Returns a debug graph for diagnostics. */
   getRuntimeDebugGraph(scene: SceneDoc): RuntimeDebugGraph
 }

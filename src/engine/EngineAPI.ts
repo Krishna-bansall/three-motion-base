@@ -29,7 +29,7 @@ import {
   replaceProductSlotAsset,
   updateStudioEnvironment,
 } from './project/document'
-import type { LookPreset, LookPresetId, ProjectDoc, StudioGeometryKind, StudioPresetId } from './project/types'
+import type { CameraDef, LookPreset, LookPresetId, ProjectDoc, StudioGeometryKind, StudioPresetId } from './project/types'
 import {
   buildConsoleState,
   buildRuntimeStateGraph,
@@ -91,6 +91,7 @@ export class EngineAPI {
     this.runtime.onTransformInteractionStart(() => this.beginTransformHistory())
     this.runtime.onTransformInteractionEnd(() => this.commitTransformHistory())
     void this.runtime.setViewSettings(readViewSettingsFromStore())
+    this.syncRenderCameraToRuntime()
     this.publishHistoryState()
   }
 
@@ -244,6 +245,7 @@ export class EngineAPI {
     publishStudioSetupObjects(this.currentProject)
     publishEntities(this.currentScene)
     publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
+    this.syncRenderCameraToRuntime()
     this.commitCurrentSnapshot()
   }
 
@@ -579,13 +581,19 @@ export class EngineAPI {
       this.runtime.setSceneAssets(nextAssets)
       await this.runtime.buildFromCanonical(this.currentScene)
       await this.runtime.setViewSettings(readViewSettingsFromStore())
+      this.syncRenderCameraToRuntime()
 
       publishHasModel(true)
       publishProjectLook(this.currentProject)
       publishStudioSetupObjects(this.currentProject)
       publishEntities(this.currentScene)
       publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
-      this.initializeHistory()
+      if (this.history.totalStates === 0) {
+        this.initializeHistory()
+      } else {
+        this.commitCurrentSnapshot()
+      }
+      this.publishHistoryState()
     } finally {
       publishLoading(false)
     }
@@ -772,6 +780,7 @@ export class EngineAPI {
       this.runtime.setSceneAssets(this.currentAssets)
       await this.runtime.buildFromCanonical(this.currentScene ?? createEmptySceneDoc())
       await this.runtime.setViewSettings(snapshot.viewSettings)
+      this.syncRenderCameraToRuntime()
       publishViewSettings(snapshot.viewSettings)
       publishProjectLook(this.currentProject)
       publishStudioSetupObjects(this.currentProject)
@@ -809,6 +818,17 @@ export class EngineAPI {
   private getTrackedProductRootNodeId(): NodeId | null {
     const slotId = this.currentProject.studioScene.primaryProductSlotId
     return this.currentProject.studioScene.productSlots[slotId]?.asset?.rootNodeId ?? null
+  }
+
+  private getRenderCameraDef(): CameraDef | null {
+    const nodeId = this.currentProject.studioScene.renderCameraNodeId
+    return Object.values(this.currentProject.studioScene.cameras).find((cam) => cam.nodeId === nodeId) ?? null
+  }
+
+  private syncRenderCameraToRuntime(): void {
+    const camera = this.getRenderCameraDef()
+    if (!camera) return
+    this.runtime.setRenderCamera(camera.nodeId, camera.fovDegrees, camera.near, camera.far)
   }
 
   private getConsoleState(): object {

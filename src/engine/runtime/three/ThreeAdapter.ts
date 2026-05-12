@@ -21,6 +21,7 @@ export class ThreeAdapter implements RuntimeAdapter {
   private renderer: ThreeRenderer | null = null
   private sceneAssets: RuntimeSceneAssetBundle | null = null
   private activeRootNodeId: NodeId | null = null
+  private renderCameraNodeId: NodeId | null = null
   private nodeObjects = new Map<NodeId, THREE.Object3D>()
   private materialObjects = new Map<string, THREE.Material[]>()
   private viewSettings: ViewSettings = createDefaultViewSettings()
@@ -171,6 +172,16 @@ export class ThreeAdapter implements RuntimeAdapter {
     return cloneViewSettings(this.viewSettings)
   }
 
+  setRenderCamera(nodeId: NodeId, fovDegrees: number, near: number, far: number): void {
+    this.renderCameraNodeId = nodeId
+    if (!this.renderer) return
+    this.renderer.camera.fov = fovDegrees
+    this.renderer.camera.near = near
+    this.renderer.camera.far = far
+    this.renderer.camera.updateProjectionMatrix()
+    this.syncRendererCameraFromNode()
+  }
+
   setTransformToolMode(mode: TransformGizmoMode | null): void {
     this.renderer?.setTransformMode(mode)
   }
@@ -251,6 +262,19 @@ export class ThreeAdapter implements RuntimeAdapter {
     object.position.set(...node.t)
     object.quaternion.set(...node.r)
     object.scale.set(...node.s)
+
+    if (nodeId === this.renderCameraNodeId) {
+      this.syncRendererCameraFromNode()
+    }
+  }
+
+  private syncRendererCameraFromNode(): void {
+    if (!this.renderer || !this.renderCameraNodeId) return
+    const object = this.nodeObjects.get(this.renderCameraNodeId)
+    if (!object) return
+    this.renderer.camera.position.copy(object.position)
+    this.renderer.camera.quaternion.copy(object.quaternion)
+    this.renderer.camera.scale.copy(object.scale)
   }
 
   private applyMaterialState(materialId: string, materialDef: SceneDoc['materials'][string]): void {

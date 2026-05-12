@@ -178,8 +178,10 @@ function attachFakeRenderer(adapter: ThreeAdapter) {
   const loadHDRICalls: string[] = []
   const setExposureCalls: number[] = []
   let transformMode: 'translate' | 'rotate' | 'scale' | null = null
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100)
   const renderer = {
     productRoot,
+    camera,
     renderer: { domElement: {} } as THREE.WebGLRenderer,
     postProcessing: {
       setBloom: (...args: [number, number, number]) => bloomCalls.push(args),
@@ -344,6 +346,43 @@ test('ThreeAdapter.applyDirty patches transforms and materials without rebuildin
   assert.equal(firstMaterial.roughness, 0.8)
   assert.equal(firstMaterial.metalness, 0.2)
   assert.equal(firstMaterial.envMapIntensity, 1.4)
+})
+
+test('ThreeAdapter.setRenderCamera updates renderer camera projection and transform', async () => {
+  const adapter = new ThreeAdapter()
+  const runtime = attachFakeRenderer(adapter)
+  const scene = createWrappedStudioScene()
+
+  adapter.setSceneAssets(createRuntimeSourceAssets())
+  await adapter.buildFromCanonical(scene)
+
+  adapter.setRenderCamera('node-studio-floor', 60, 0.5, 200)
+
+  assert.equal(runtime.renderer.camera.fov, 60)
+  assert.equal(runtime.renderer.camera.near, 0.5)
+  assert.equal(runtime.renderer.camera.far, 200)
+  assert.deepEqual(runtime.renderer.camera.position.toArray(), [0, -0.78, 0])
+})
+
+test('ThreeAdapter.applyDirty syncs camera node transform to renderer camera', async () => {
+  const adapter = new ThreeAdapter()
+  const runtime = attachFakeRenderer(adapter)
+  const scene = createWrappedStudioScene()
+
+  adapter.setSceneAssets(createRuntimeSourceAssets())
+  await adapter.buildFromCanonical(scene)
+  adapter.setRenderCamera('node-studio-floor', 45, 0.1, 100)
+
+  const editedScene = cloneSceneDoc(scene)
+  setNodeTRS(editedScene, 'node-studio-floor', {
+    t: [1, 2, 3],
+    r: [0, 0, 0, 1],
+    s: [1, 1, 1],
+  })
+
+  await adapter.applyDirty(diffSceneDocs(scene, editedScene), editedScene)
+
+  assert.deepEqual(runtime.renderer.camera.position.toArray(), [1, 2, 3])
 })
 
 test('ThreeAdapter.setViewSettings loads HDRI only when preset changes and pushes renderer settings', async () => {

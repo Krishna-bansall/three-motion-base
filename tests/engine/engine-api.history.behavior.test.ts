@@ -73,6 +73,11 @@ class FakeRuntime implements RuntimeAdapter {
     return []
   }
 
+  renderCameraCalls: Array<{ nodeId: NodeId; fovDegrees: number; near: number; far: number }> = []
+  setRenderCamera(nodeId: NodeId, fovDegrees: number, near: number, far: number): void {
+    this.renderCameraCalls.push({ nodeId, fovDegrees, near, far })
+  }
+
   getRuntimeDebugGraph(scene: SceneDoc): RuntimeDebugGraph {
     const rootNode = scene.roots[0] ? scene.nodes[scene.roots[0]] : null
     return {
@@ -402,4 +407,29 @@ test('filter reset restores shared defaults and batches one history entry', asyn
   assert.equal(useEngineStore.getState().cinematic.filmGrain, 0.09)
   assert.equal(useEngineStore.getState().cinematic.chromaticAberration, 0.012)
   assert.equal(useEngineStore.getState().cinematic.colorTemperature, -0.45)
+})
+
+test('camera transform edits are undoable and redoable through history', async () => {
+  const { engine, runtime } = await createLoadedEngine()
+  const cameraNodeId = engine.getProjectSnapshot().studioScene.renderCameraNodeId
+
+  const originalCameraPosition = engine.getCanonicalSceneSnapshot()?.nodes[cameraNodeId]?.t
+  assert.deepEqual(originalCameraPosition, [0, 0.8, 4])
+
+  engine.setTransform(cameraNodeId, { px: 2, py: 1.5, pz: 6 })
+
+  assert.deepEqual(engine.getCanonicalSceneSnapshot()?.nodes[cameraNodeId]?.t, [2, 1.5, 6])
+  assert.equal(engine.getRuntimeStateGraph().history.undoDepth, 1)
+  assert.equal(runtime.applyDirtyCalls.length, 1)
+
+  const didUndo = await engine.undo()
+
+  assert.equal(didUndo, true)
+  assert.deepEqual(engine.getCanonicalSceneSnapshot()?.nodes[cameraNodeId]?.t, originalCameraPosition)
+  assert.equal(runtime.buildCalls.length, 2)
+
+  const didRedo = await engine.redo()
+
+  assert.equal(didRedo, true)
+  assert.deepEqual(engine.getCanonicalSceneSnapshot()?.nodes[cameraNodeId]?.t, [2, 1.5, 6])
 })

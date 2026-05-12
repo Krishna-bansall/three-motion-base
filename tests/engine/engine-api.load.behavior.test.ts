@@ -86,6 +86,11 @@ class FakeRuntime implements RuntimeAdapter {
     return []
   }
 
+  renderCameraCalls: Array<{ nodeId: NodeId; fovDegrees: number; near: number; far: number }> = []
+  setRenderCamera(nodeId: NodeId, fovDegrees: number, near: number, far: number): void {
+    this.renderCameraCalls.push({ nodeId, fovDegrees, near, far })
+  }
+
   getRuntimeDebugGraph(): RuntimeDebugGraph {
     return { root: null, meshes: [] }
   }
@@ -176,6 +181,26 @@ function createMountedEngine(): { engine: EngineAPI; runtime: FakeRuntime } {
 
 test.beforeEach(() => {
   resetStore()
+})
+
+test('EngineAPI exposes durable project shape before any model is loaded', () => {
+  const { engine } = createMountedEngine()
+  const project = engine.getProjectSnapshot()
+
+  assert.equal(project.name, 'Untitled Project')
+  assert.equal(project.studioScene.name, 'Studio Scene')
+  assert.equal(project.studioScene.primaryProductSlotId, 'product-slot-primary')
+  assert.equal(project.studioScene.productSlots['product-slot-primary'].asset, null)
+  assert.equal(project.studioScene.environment.hdriId, 'studio')
+  assert.equal(project.look.name, 'Studio Neutral')
+  assert.equal(project.activeShotId, 'shot-main')
+  assert.equal(project.shots['shot-main'].name, 'Main Shot')
+  assert.equal(project.shots['shot-main'].renderCameraNodeId, 'node-render-camera')
+  assert.equal(project.studioScene.renderCameraNodeId, 'node-render-camera')
+  assert.equal(project.studioScene.cameras['camera-render'].kind, 'perspective')
+  assert.deepEqual(project.shotOrder, ['shot-main'])
+  assert.equal(engine.getCanonicalSceneSnapshot(), null)
+  assert.equal(useEngineStore.getState().hasModel, false)
 })
 
 test('EngineAPI.init mounts runtime, registers callbacks, and pushes store view settings', () => {
@@ -550,5 +575,97 @@ test('successful replacement load rebuilds directly from the next studio scene',
     '/models/second.glb',
   ])
   assert.deepEqual(runtime.buildCalls[1].roots, ['node-studio-root'])
+  assert.equal(useEngineStore.getState().entities[0]?.name, 'second-root-mesh')
+})
+
+test('EngineAPI sets canonical render camera on runtime after load', async () => {
+  const { engine, runtime } = createMountedEngine()
+  const cameraCallsBeforeLoad = runtime.renderCameraCalls.length
+
+  await withMockedLoader(
+    async () => ({ scene: createStubGLTFScene('camera-root') }),
+    async () => {
+      await engine.loadModel('/models/camera.glb')
+    },
+  )
+
+  assert.equal(runtime.renderCameraCalls.length, cameraCallsBeforeLoad + 1)
+  assert.deepEqual(runtime.renderCameraCalls.at(-1), {
+    nodeId: 'node-render-camera',
+    fovDegrees: 45,
+    near: 0.1,
+    far: 100,
+  })
+})
+
+test('canonical render camera is preserved through product replacement', async () => {
+  const { engine, runtime } = createMountedEngine()
+
+  await withMockedLoader(
+    async () => ({ scene: createStubGLTFScene('first-root') }),
+    async () => {
+      await engine.loadModel('/models/first.glb')
+    },
+  )
+
+  const cameraCallsBefore = runtime.renderCameraCalls.length
+
+  await withMockedLoader(
+    async () => ({ scene: createStubGLTFScene('second-root') }),
+    async () => {
+      await engine.loadModel('/models/second.glb')
+    },
+  )
+
+  assert.equal(runtime.renderCameraCalls.length, cameraCallsBefore + 1)
+  assert.deepEqual(runtime.renderCameraCalls.at(-1), {
+    nodeId: 'node-render-camera',
+    fovDegrees: 45,
+    near: 0.1,
+    far: 100,
+  })
+
+  const project = engine.getProjectSnapshot()
+  assert.equal(project.studioScene.renderCameraNodeId, 'node-render-camera')
+  assert.equal(project.studioScene.cameras['camera-render'].nodeId, 'node-render-camera')
+})
+
+test('product replacement is undoable and redoable', async () => {
+  const { engine, runtime } = createMountedEngine()
+
+  await withMockedLoader(
+    async () => ({ scene: createStubGLTFScene('first-root') }),
+    async () => {
+      await engine.loadModel('/models/first.glb')
+    },
+  )
+
+  const projectAfterFirst = engine.getProjectSnapshot()
+  const sceneAfterFirst = engine.getCanonicalSceneSnapshot()
+
+  await withMockedLoader(
+    async () => ({ scene: createStubGLTFScene('second-root') }),
+    async () => {
+      await engine.loadModel('/models/second.glb')
+    },
+  )
+
+  assert.equal(engine.getProjectSnapshot().studioScene.productSlots['product-slot-primary'].asset?.uri, '/models/second.glb')
+  assert.equal(useEngineStore.getState().entities[0]?.name, 'second-root-mesh')
+
+  const buildCountBeforeUndo = runtime.buildCalls.length
+
+  const didUndo = await engine.undo()
+
+  assert.equal(didUndo, true)
+  assert.deepEqual(engine.getProjectSnapshot().studioScene.productSlots['product-slot-primary'].asset, projectAfterFirst.studioScene.productSlots['product-slot-primary'].asset)
+  assert.deepEqual(engine.getCanonicalSceneSnapshot(), sceneAfterFirst)
+  assert.equal(useEngineStore.getState().entities[0]?.name, 'first-root-mesh')
+  assert.equal(runtime.buildCalls.length, buildCountBeforeUndo + 1)
+
+  const didRedo = await engine.redo()
+
+  assert.equal(didRedo, true)
+  assert.equal(engine.getProjectSnapshot().studioScene.productSlots['product-slot-primary'].asset?.uri, '/models/second.glb')
   assert.equal(useEngineStore.getState().entities[0]?.name, 'second-root-mesh')
 })

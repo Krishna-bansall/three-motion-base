@@ -78,6 +78,8 @@ class FakeRuntime implements RuntimeAdapter {
     return []
   }
 
+  setRenderCamera(): void {}
+
   getRuntimeDebugGraph(): RuntimeDebugGraph {
     return { root: null, meshes: [] }
   }
