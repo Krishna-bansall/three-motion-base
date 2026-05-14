@@ -605,6 +605,7 @@ export class EngineAPI {
       children: [
         primarySlot.nodeId,
         project.studioScene.renderCameraNodeId,
+        ...Object.values(project.studioScene.lights).map((light) => light.nodeId),
         ...Object.values(project.studioScene.studioGeometry).map((object) => object.nodeId),
       ],
     })
@@ -620,7 +621,30 @@ export class EngineAPI {
       name: 'Render Camera',
       children: [],
       t: [0, 0.8, 4],
+      camera: project.studioScene.cameras['camera-render']
+        ? {
+            kind: project.studioScene.cameras['camera-render'].kind,
+            fovDegrees: project.studioScene.cameras['camera-render'].fovDegrees,
+            near: project.studioScene.cameras['camera-render'].near,
+            far: project.studioScene.cameras['camera-render'].far,
+          }
+        : undefined,
     })
+
+    for (const light of Object.values(project.studioScene.lights)) {
+      scene.nodes[light.nodeId] = createProjectNode({
+        id: light.nodeId,
+        parentId: studioRootId,
+        name: light.name,
+        children: [],
+        t: getStudioLightTransform(light.id),
+        light: {
+          kind: light.kind,
+          intensity: light.intensity,
+          color: [...light.color],
+        },
+      })
+    }
 
     for (const object of Object.values(project.studioScene.studioGeometry)) {
       const material = Object.values(project.studioScene.materials)[0]
@@ -833,6 +857,8 @@ function createProjectNode(params: {
   children: NodeId[]
   t?: [number, number, number]
   visible?: boolean
+  camera?: SceneNode['camera']
+  light?: SceneNode['light']
   meshId?: string
   materialId?: string
 }): SceneNode {
@@ -845,6 +871,8 @@ function createProjectNode(params: {
     r: [0, 0, 0, 1],
     s: [1, 1, 1],
     visible: params.visible ?? true,
+    ...(params.camera ? { camera: structuredClone(params.camera) } : {}),
+    ...(params.light ? { light: structuredClone(params.light) } : {}),
     ...(params.meshId ? { meshId: params.meshId } : {}),
     ...(params.materialId ? { materialId: params.materialId } : {}),
   }
@@ -858,5 +886,18 @@ function getStudioGeometryTransform(kind: StudioGeometryKind): [number, number, 
       return [0, 0.55, -2.15]
     case 'plinth':
       return [0, -0.52, 0]
+  }
+}
+
+function getStudioLightTransform(lightId: string): [number, number, number] {
+  switch (lightId) {
+    case 'light-key':
+      return [1.8, 2.2, 2.4]
+    case 'light-fill':
+      return [-1.6, 1.4, 2]
+    case 'light-rim':
+      return [-1.2, 1.9, -2.4]
+    default:
+      return [0, 2, 2]
   }
 }

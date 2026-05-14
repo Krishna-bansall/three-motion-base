@@ -139,7 +139,7 @@ const MOTION_PRESETS: Record<MotionPresetId, MotionPreset> = {
     durationSeconds: 3,
     parameters: {
       intensityMultiplier: 0.45,
-      cycles: 2,
+      cycles: 1,
     },
   },
   'light-sweep': {

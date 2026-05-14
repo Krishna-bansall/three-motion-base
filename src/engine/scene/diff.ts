@@ -36,9 +36,12 @@ export function diffSceneDocs(previous: SceneDoc, next: SceneDoc): SceneDelta {
     if (!isEqual(prevNode.t, nextNode.t)) patch.t = [...nextNode.t]
     if (!isEqual(prevNode.r, nextNode.r)) patch.r = [...nextNode.r]
     if (!isEqual(prevNode.s, nextNode.s)) patch.s = [...nextNode.s]
+    if (!isEqual(prevNode.camera, nextNode.camera)) patch.camera = structuredClone(nextNode.camera)
+    if (!isEqual(prevNode.light, nextNode.light)) patch.light = structuredClone(nextNode.light)
     if (!isEqual(prevNode.meshId, nextNode.meshId)) patch.meshId = nextNode.meshId
     if (!isEqual(prevNode.materialId, nextNode.materialId)) patch.materialId = nextNode.materialId
     if (!isEqual(prevNode.visible, nextNode.visible)) patch.visible = nextNode.visible
+    if (!isEqual(prevNode.extras, nextNode.extras)) patch.extras = structuredClone(nextNode.extras)
 
     if (Object.keys(patch).length > 0) {
       changedNodes[nodeId] = patch

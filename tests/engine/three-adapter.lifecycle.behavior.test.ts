@@ -157,6 +157,28 @@ function createWrappedStudioScene(): SceneDoc {
   return scene
 }
 
+function createStudioSceneWithLightRig(): SceneDoc {
+  const scene = createWrappedStudioScene()
+  scene.nodes['node-studio-root'].children.push('node-light-key')
+  scene.nodes['node-light-key'] = {
+    id: 'node-light-key',
+    parentId: 'node-studio-root',
+    children: [],
+    name: 'Key Light',
+    t: [1.8, 2.2, 2.4],
+    r: [0, 0, 0, 1],
+    s: [1, 1, 1],
+    visible: true,
+    light: {
+      kind: 'directional',
+      intensity: 1.2,
+      color: [1, 0.98, 0.95],
+    },
+  }
+
+  return scene
+}
+
 function createViewSettings(overrides: Partial<ViewSettings> = {}): ViewSettings {
   const defaults = createDefaultViewSettings()
   return {
@@ -344,6 +366,36 @@ test('ThreeAdapter.applyDirty patches transforms and materials without rebuildin
   assert.equal(firstMaterial.roughness, 0.8)
   assert.equal(firstMaterial.metalness, 0.2)
   assert.equal(firstMaterial.envMapIntensity, 1.4)
+})
+
+test('ThreeAdapter realizes canonical light nodes and patches light state without rebuild', async () => {
+  const adapter = new ThreeAdapter()
+  const runtime = attachFakeRenderer(adapter)
+  const originalScene = createStudioSceneWithLightRig()
+
+  adapter.setSceneAssets(createRuntimeSourceAssets())
+  await adapter.buildFromCanonical(originalScene)
+
+  const studioRoot = runtime.productRoot.children[0] as THREE.Group
+  const keyLight = studioRoot.children.find((child) => child.userData.threeMotionNodeId === 'node-light-key')
+
+  assert.ok(keyLight instanceof THREE.DirectionalLight)
+  assert.equal(keyLight.intensity, 1.2)
+  assert.deepEqual(keyLight.position.toArray(), [1.8, 2.2, 2.4])
+  assert.deepEqual(keyLight.color.toArray().map((value) => Math.round(value * 100) / 100), [1, 0.98, 0.95])
+
+  const editedScene = cloneSceneDoc(originalScene)
+  editedScene.nodes['node-light-key'].light = {
+    kind: 'directional',
+    intensity: 0.6,
+    color: [0.2, 0.3, 0.4],
+  }
+
+  await adapter.applyDirty(diffSceneDocs(originalScene, editedScene), editedScene)
+
+  assert.ok(keyLight instanceof THREE.DirectionalLight)
+  assert.equal(keyLight.intensity, 0.6)
+  assert.deepEqual(keyLight.color.toArray().map((value) => Math.round(value * 100) / 100), [0.2, 0.3, 0.4])
 })
 
 test('ThreeAdapter.setViewSettings loads HDRI only when preset changes and pushes renderer settings', async () => {

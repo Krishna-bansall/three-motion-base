@@ -251,6 +251,18 @@ export class ThreeAdapter implements RuntimeAdapter {
     object.position.set(...node.t)
     object.quaternion.set(...node.r)
     object.scale.set(...node.s)
+
+    if (object instanceof THREE.PerspectiveCamera && node.camera) {
+      object.fov = node.camera.fovDegrees
+      object.near = node.camera.near
+      object.far = node.camera.far
+      object.updateProjectionMatrix()
+    }
+
+    if (object instanceof THREE.Light && node.light) {
+      object.color.setRGB(...node.light.color)
+      object.intensity = node.light.intensity
+    }
   }
 
   private applyMaterialState(materialId: string, materialDef: SceneDoc['materials'][string]): void {

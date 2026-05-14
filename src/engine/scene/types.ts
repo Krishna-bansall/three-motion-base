@@ -4,6 +4,8 @@ export type MaterialId = string
 
 export type Vec3 = [number, number, number]
 export type Quat = [number, number, number, number]
+export type SceneCameraKind = 'perspective'
+export type SceneLightKind = 'directional' | 'point' | 'spot'
 
 export interface SceneDoc {
   roots: NodeId[]
@@ -25,10 +27,27 @@ export interface SceneNode {
   t: Vec3
   r: Quat
   s: Vec3
+  camera?: CameraComponent
+  light?: LightComponent
   meshId?: MeshId
   materialId?: MaterialId
   visible: boolean
   extras?: Record<string, unknown>
+}
+
+export interface CameraComponent {
+  kind: SceneCameraKind
+  fovDegrees: number
+  near: number
+  far: number
+}
+
+export interface LightComponent {
+  kind: SceneLightKind
+  intensity: number
+  color: [number, number, number]
+  angleDegrees?: number
+  distance?: number
 }
 
 export interface MeshDef {

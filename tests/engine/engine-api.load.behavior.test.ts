@@ -251,6 +251,17 @@ test('loadModel loads a scene into the project studio shell and publishes canoni
   assert.ok(runtime.sceneAssetsHistory[0], 'loaded assets should be stored on the runtime')
   assert.equal(runtime.buildCalls.length, 1)
   assert.deepEqual(runtime.buildCalls[0].roots, ['node-studio-root'])
+  assert.deepEqual(runtime.buildCalls[0].nodes['node-render-camera']?.camera, {
+    kind: 'perspective',
+    fovDegrees: 45,
+    near: 0.1,
+    far: 100,
+  })
+  assert.deepEqual(runtime.buildCalls[0].nodes['node-light-key']?.light, {
+    kind: 'directional',
+    intensity: 1.2,
+    color: [1, 0.98, 0.95],
+  })
   assert.equal(runtime.buildCalls[0].materials['material-0']?.envMapIntensity, 1.2)
   assert.equal(useEngineStore.getState().canUndo, false)
   assert.equal(useEngineStore.getState().canRedo, false)

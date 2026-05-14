@@ -117,6 +117,14 @@ function buildCanonicalObject(
 }
 
 function createObjectForNode(scene: SceneDoc, node: SceneNode): THREE.Object3D {
+  if (node.light) {
+    return createLight(node.light)
+  }
+
+  if (node.camera) {
+    return new THREE.PerspectiveCamera(node.camera.fovDegrees, 1, node.camera.near, node.camera.far)
+  }
+
   const mesh = node.meshId ? scene.meshes[node.meshId] : undefined
 
   if (!mesh) {
@@ -158,6 +166,18 @@ function applySceneNodeState(node: SceneNode, object: THREE.Object3D): void {
   object.position.set(...node.t)
   object.quaternion.set(...node.r)
   object.scale.set(...node.s)
+
+  if (object instanceof THREE.PerspectiveCamera && node.camera) {
+    object.fov = node.camera.fovDegrees
+    object.near = node.camera.near
+    object.far = node.camera.far
+    object.updateProjectionMatrix()
+  }
+
+  if (object instanceof THREE.Light && node.light) {
+    object.color.setRGB(...node.light.color)
+    object.intensity = node.light.intensity
+  }
 }
 
 function collectMaterialObject(
@@ -186,5 +206,21 @@ function tagMaterialInstances(materialLike: THREE.Material | THREE.Material[], m
   const materials = Array.isArray(materialLike) ? materialLike : [materialLike]
   for (const material of materials) {
     material.userData.threeMotionMaterialId = materialId
+  }
+}
+
+function createLight(light: NonNullable<SceneNode['light']>): THREE.Light {
+  switch (light.kind) {
+    case 'directional':
+      return new THREE.DirectionalLight(new THREE.Color(...light.color), light.intensity)
+    case 'point':
+      return new THREE.PointLight(new THREE.Color(...light.color), light.intensity, light.distance ?? 0)
+    case 'spot':
+      return new THREE.SpotLight(
+        new THREE.Color(...light.color),
+        light.intensity,
+        light.distance ?? 0,
+        THREE.MathUtils.degToRad(light.angleDegrees ?? 36),
+      )
   }
 }
