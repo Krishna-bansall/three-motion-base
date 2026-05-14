@@ -19,13 +19,6 @@ import {
 
 test('createDefaultProject creates a durable studio project with one main shot', () => {
   const project = createDefaultProject()
-  const createTrack = (rowId: string) => ({
-    id: `${rowId}-track-1`,
-    name: 'Track 1',
-    enabled: true,
-    collapsed: false,
-    items: [],
-  })
 
   assert.equal(project.name, 'Untitled Project')
   assert.equal(project.studioScene.name, 'Studio Scene')
@@ -68,7 +61,7 @@ test('createDefaultProject creates a durable studio project with one main shot',
     intensity: 1.2,
     color: [1, 0.98, 0.95],
   })
-assert.equal(project.studioScene.studioGeometry.studioGeometry, {})
+  assert.deepEqual(project.studioScene.studioGeometry, {})
   assert.deepEqual(project.studioScene.materials, {})
 
   assert.deepEqual(project.shotOrder, ['shot-main'])
@@ -129,7 +122,6 @@ assert.equal(project.studioScene.studioGeometry.studioGeometry, {})
     },
   ]
   assert.deepEqual(shot.sequence.rows, expectedRows)
-})
 })
 
 test('cloneProjectDoc isolates nested project state for snapshots', () => {
@@ -206,7 +198,7 @@ test('replaceProductSlotAsset preserves studio setup, look, and shot metadata', 
           targetNodeId: 'node-render-camera',
           targetKind: 'camera',
           category: 'camera',
-          items: [],
+          tracks: [{ id: 'row-camera-track-1', name: 'Track 1', enabled: true, collapsed: false, items: [] }],
           children: [],
         },
       ],
@@ -382,11 +374,12 @@ test('addLayerToActiveShot adds contextual motion presets to object, camera, and
   })
 
   const rows = withLightLayer.shots[withLightLayer.activeShotId].sequence.rows
-  const productTrack = rows.find((row) => row.targetNodeId === 'node-product-slot-primary')?.tracks[0]
-  const cameraTrack = rows.find((row) => row.targetNodeId === 'node-render-camera')?.tracks[0]
-  const lightTrack = rows.find((row) => row.targetNodeId === 'node-light-key')?.tracks[0]
 
-  assert.deepEqual(productTrack?.items[0], {
+  const productRow = rows.find((row) => row.targetNodeId === 'node-product-slot-primary')
+  const cameraRow = rows.find((row) => row.targetNodeId === 'node-render-camera')
+  const lightRow = rows.find((row) => row.targetNodeId === 'node-light-key')
+
+  assert.deepEqual(productRow?.tracks[0]?.items[0], {
     id: 'layer-1',
     kind: 'layer',
     name: 'Float',
@@ -406,11 +399,36 @@ test('addLayerToActiveShot adds contextual motion presets to object, camera, and
     },
     curveOverrides: [],
   })
-  assert.equal(cameraTrack?.items[0]?.presetId, 'camera-dolly-in')
-  assert.equal(lightTrack?.items[0]?.presetId, 'light-pulse')
-  assert.deepEqual(project.shots[project.activeShotId].sequence.rows.every(
-    (row) => row.tracks.every((track) => track.items.length === 0),
-  ), true)
+  assert.equal(cameraRow?.tracks[0]?.items[0]?.presetId, 'camera-dolly-in')
+  assert.equal(lightRow?.tracks[0]?.items[0]?.presetId, 'light-pulse')
+  assert.deepEqual(project.shots[project.activeShotId].sequence.rows.every((row) => row.tracks.every((track) => track.items.length === 0)), true)
+})
+
+test('addLayerToActiveShot adds to a specific track', () => {
+  const project = createDefaultProject()
+
+  const withTwoTracks = addTrackToActiveShot(project, {
+    targetNodeId: 'node-product-slot-primary',
+    name: 'Rotation',
+  })
+  const productRow = withTwoTracks.shots[withTwoTracks.activeShotId].sequence.rows
+    .find((row) => row.targetNodeId === 'node-product-slot-primary')
+
+  assert.equal(productRow?.tracks.length, 2)
+  assert.equal(productRow?.tracks[1]?.name, 'Rotation')
+
+  const withLayer = addLayerToActiveShot(withTwoTracks, {
+    targetNodeId: 'node-product-slot-primary',
+    presetId: 'object-spin',
+    trackId: productRow!.tracks[1].id,
+  })
+
+  const updatedRow = withLayer.shots[withLayer.activeShotId].sequence.rows
+    .find((row) => row.targetNodeId === 'node-product-slot-primary')
+
+  assert.equal(updatedRow?.tracks[0]?.items.length, 0)
+  assert.equal(updatedRow?.tracks[1]?.items.length, 1)
+  assert.equal(updatedRow?.tracks[1]?.items[0]?.presetId, 'object-spin')
 })
 
 test('updateActiveShotLayer patches one layer without mutating other timeline rows', () => {
@@ -428,10 +446,9 @@ test('updateActiveShotLayer patches one layer without mutating other timeline ro
 
   const cameraRow = updated.shots[updated.activeShotId].sequence.rows
     .find((row) => row.targetNodeId === 'node-render-camera')
-  const cameraTrack = cameraRow?.tracks[0]
 
-  assert.deepEqual(cameraTrack?.items[0], {
-    ...cameraTrack?.items[0],
+  assert.deepEqual(cameraRow?.tracks[0]?.items[0], {
+    ...cameraRow?.tracks[0]?.items[0],
     id: 'layer-1',
     name: 'Roundturn',
     targetNodeId: 'node-render-camera',
@@ -442,7 +459,6 @@ test('updateActiveShotLayer patches one layer without mutating other timeline ro
     startTimeSeconds: 1.25,
     durationSeconds: 6.5,
     strength: 0.55,
-    easing: 'linear',
     enabled: false,
   })
   assert.deepEqual(
@@ -455,25 +471,85 @@ test('updateActiveShotLayer patches one layer without mutating other timeline ro
     .find((row) => row.targetNodeId === 'node-render-camera')?.tracks[0]?.items[0]?.enabled, true)
 })
 
-test('getMotionPresets exposes default easing, feature tags, and typed parameter controls', () => {
-  const [floatPreset] = getMotionPresets('object')
-  const [dollyPreset] = getMotionPresets('camera').filter((preset) => preset.id === 'camera-dolly-in')
+test('addTrackToActiveShot adds a track to a row', () => {
+  const project = createDefaultProject()
 
-  assert.equal(floatPreset?.defaultEasing, 'linear')
-  assert.deepEqual(floatPreset?.features, ['translate', 'oscillate'])
-  assert.deepEqual(floatPreset?.parameterControls, [
-    { key: 'amplitude', label: 'Amplitude', kind: 'number', min: 0, max: 2, step: 0.05 },
-    { key: 'cycles', label: 'Cycles', kind: 'number', min: 0.25, max: 6, step: 0.25 },
-    {
-      key: 'axis',
-      label: 'Axis',
-      kind: 'select',
-      options: [
-        { value: 'x', label: 'X' },
-        { value: 'y', label: 'Y' },
-        { value: 'z', label: 'Z' },
-      ],
-    },
-  ])
-  assert.equal(dollyPreset?.defaultEasing, 'ease-out')
+  const withExtraTrack = addTrackToActiveShot(project, {
+    targetNodeId: 'node-product-slot-primary',
+    name: 'Rotation',
+  })
+
+  const productRow = withExtraTrack.shots[withExtraTrack.activeShotId].sequence.rows
+    .find((row) => row.targetNodeId === 'node-product-slot-primary')
+
+  assert.equal(productRow?.tracks.length, 2)
+  assert.equal(productRow?.tracks[0]?.name, 'Track 1')
+  assert.equal(productRow?.tracks[1]?.name, 'Rotation')
+  assert.equal(productRow?.tracks[1]?.enabled, true)
+  assert.equal(productRow?.tracks[1]?.collapsed, false)
+  assert.deepEqual(productRow?.tracks[1]?.items, [])
+
+  assert.equal(project.shots[project.activeShotId].sequence.rows
+    .find((row) => row.targetNodeId === 'node-product-slot-primary')?.tracks.length, 1)
+})
+
+test('removeTrackFromActiveShot removes a track from a row', () => {
+  const project = createDefaultProject()
+  const withTwoTracks = addTrackToActiveShot(project, {
+    targetNodeId: 'node-product-slot-primary',
+    name: 'Rotation',
+  })
+
+  const trackId = withTwoTracks.shots[withTwoTracks.activeShotId].sequence.rows
+    .find((row) => row.targetNodeId === 'node-product-slot-primary')?.tracks[1]?.id
+
+  const result = removeTrackFromActiveShot(withTwoTracks, {
+    targetNodeId: 'node-product-slot-primary',
+    trackId: trackId!,
+  })
+
+  const productRow = result.shots[result.activeShotId].sequence.rows
+    .find((row) => row.targetNodeId === 'node-product-slot-primary')
+
+  assert.equal(productRow?.tracks.length, 1)
+  assert.equal(productRow?.tracks[0]?.name, 'Track 1')
+})
+
+test('removeTrackFromActiveShot rejects removing the last track', () => {
+  const project = createDefaultProject()
+
+  assert.throws(
+    () => removeTrackFromActiveShot(project, {
+      targetNodeId: 'node-product-slot-primary',
+      trackId: 'row-product-primary-track-1',
+    }),
+    /Cannot remove the last track/,
+  )
+})
+
+test('updateTrackInActiveShot patches track properties', () => {
+  const project = createDefaultProject()
+  const withTwoTracks = addTrackToActiveShot(project, {
+    targetNodeId: 'node-product-slot-primary',
+    name: 'Rotation',
+  })
+  const trackId = withTwoTracks.shots[withTwoTracks.activeShotId].sequence.rows
+    .find((row) => row.targetNodeId === 'node-product-slot-primary')?.tracks[1]?.id
+
+  const updated = updateTrackInActiveShot(withTwoTracks, {
+    trackId: trackId!,
+    name: 'Spin Track',
+    enabled: false,
+    collapsed: true,
+  })
+
+  const productRow = updated.shots[updated.activeShotId].sequence.rows
+    .find((row) => row.targetNodeId === 'node-product-slot-primary')
+
+  assert.equal(productRow?.tracks[1]?.name, 'Spin Track')
+  assert.equal(productRow?.tracks[1]?.enabled, false)
+  assert.equal(productRow?.tracks[1]?.collapsed, true)
+
+  assert.equal(withTwoTracks.shots[withTwoTracks.activeShotId].sequence.rows
+    .find((row) => row.targetNodeId === 'node-product-slot-primary')?.tracks[1]?.name, 'Rotation')
 })

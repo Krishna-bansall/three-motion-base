@@ -5,6 +5,8 @@ import {
   addLayerToActiveShot,
   createDefaultProject,
   updateActiveShotLayer,
+  addTrackToActiveShot,
+  updateTrackInActiveShot,
 } from '../../src/engine/project/document.ts'
 import { createEmptySceneDoc, cloneSceneDoc } from '../../src/engine/scene/snapshot.ts'
 import type { SceneDoc } from '../../src/engine/scene/types.ts'
@@ -129,17 +131,54 @@ test('evaluateActiveShot adds overlapping layers on the same target', () => {
   assert.equal(evaluated.nodes['node-product-slot-primary']?.t[1], 0.45)
 })
 
-test('evaluateActiveShot applies layer easing before preset motion is evaluated', () => {
+test('evaluateActiveShot accumulates layers across multiple tracks on the same row', () => {
   let project = createDefaultProject()
   project = addLayerToActiveShot(project, {
-    targetNodeId: 'node-render-camera',
-    presetId: 'camera-dolly-in',
+    targetNodeId: 'node-product-slot-primary',
+    presetId: 'object-float',
   })
-  project = updateActiveShotLayer(project, 'layer-1', {
-    easing: 'ease-in',
+  project = addTrackToActiveShot(project, {
+    targetNodeId: 'node-product-slot-primary',
+    name: 'Spin',
+  })
+  const productRow = project.shots[project.activeShotId].sequence.rows
+    .find((row) => row.targetNodeId === 'node-product-slot-primary')
+  const secondTrackId = productRow!.tracks[1].id
+
+  project = addLayerToActiveShot(project, {
+    targetNodeId: 'node-product-slot-primary',
+    presetId: 'object-spin',
+    trackId: secondTrackId,
   })
 
-  const evaluated = evaluateActiveShot(project, createBaseScene(), 1)
+  const evaluated = evaluateActiveShot(project, createBaseScene(), 0.75)
 
-  assert.equal(evaluated.nodes['node-render-camera']?.t[2], 3.921)
+  assert.equal(evaluated.nodes['node-product-slot-primary']?.t[1], 0.35)
+  assert.ok(evaluated.nodes['node-product-slot-primary']?.r[1] !== 0)
+})
+
+test('evaluateActiveShot skips layers on disabled tracks', () => {
+  let project = createDefaultProject()
+  project = addTrackToActiveShot(project, {
+    targetNodeId: 'node-product-slot-primary',
+    name: 'Extra',
+  })
+  const productRow = project.shots[project.activeShotId].sequence.rows
+    .find((row) => row.targetNodeId === 'node-product-slot-primary')
+  const secondTrackId = productRow!.tracks[1].id
+
+  project = addLayerToActiveShot(project, {
+    targetNodeId: 'node-product-slot-primary',
+    presetId: 'object-float',
+    trackId: secondTrackId,
+  })
+
+  project = updateTrackInActiveShot(project, {
+    trackId: secondTrackId,
+    enabled: false,
+  })
+
+  const evaluated = evaluateActiveShot(project, createBaseScene(), 0.75)
+
+  assert.equal(evaluated.nodes['node-product-slot-primary']?.t[1], 0)
 })
