@@ -1,6 +1,6 @@
 import { cloneSceneDoc } from '../scene/snapshot'
 import { eulerToQuaternionTuple, quaternionToEulerXYZ } from '../scene/transformMath'
-import type { SceneDoc, SceneNode, Vec3 } from '../scene/types'
+import type { SceneDoc, Vec3 } from '../scene/types'
 import type {
   MotionLayer,
   MotionSequenceItem,
