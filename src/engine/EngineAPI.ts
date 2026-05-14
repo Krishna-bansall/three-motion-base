@@ -10,6 +10,7 @@ import { cloneSceneDoc, createEmptySceneDoc } from './scene/snapshot'
 import { diffSceneDocs, isSceneDeltaEmpty } from './scene/diff'
 import type { NodeId, Quat, SceneDoc, SceneNode } from './scene/types'
 import { eulerToQuaternionTuple, quaternionToEulerXYZ } from './scene/transformMath'
+import { evaluateActiveShot } from './animation/evaluate'
 import type {
   EnvironmentPreview,
   HDRIPreset,
@@ -21,16 +22,31 @@ import { ThreeAdapter } from './runtime/three/ThreeAdapter'
 import { convertCanonicalToBackendSchema } from './runtime/conversion/canonicalToBackend'
 import { EngineHistory, type EngineSnapshot } from './history/EngineHistory'
 import {
+  addLayerToActiveShot,
   applyLookPreset as applyProjectLookPreset,
   applyStudioPreset as applyProjectStudioPreset,
   cloneProjectDoc,
   createDefaultProject,
   getLookPresets,
+  getMotionPresets,
+  removeLayerFromActiveShot,
   replaceProductSlotAsset,
   updateStudioEnvironment,
+  updateActiveShotLayer,
 } from './project/document'
-import type { LookPreset, LookPresetId, ProjectDoc, StudioGeometryKind, StudioPresetId } from './project/types'
+import type {
+  AnimationTargetKind,
+  LookPreset,
+  LookPresetId,
+  MotionLayer,
+  MotionPreset,
+  MotionPresetId,
+  ProjectDoc,
+  StudioGeometryKind,
+  StudioPresetId,
+} from './project/types'
 import {
+  publishAnimationTimeline,
   buildConsoleState,
   buildRuntimeStateGraph,
   buildSceneSnapshot,
@@ -41,6 +57,7 @@ import {
   publishProjectLook,
   publishSelectedStudioObject,
   publishStudioSetupObjects,
+  publishTimelineTime,
   publishTrackedObjectTransform,
   publishViewSettings,
   readViewSettingsFromStore,
@@ -78,8 +95,10 @@ export class EngineAPI {
   private currentScene: SceneDoc | null = null
   private currentProductScene: SceneDoc | null = null
   private currentPreviewScene: SceneDoc | null = null
+  private currentAnimationPreviewScene: SceneDoc | null = null
   private currentAssets: LoadedModel['runtimeAssets'] | null = null
   private readonly history = new EngineHistory()
+  private currentTimelineTimeSeconds = 0
 
   constructor(runtime: RuntimeAdapter = new ThreeAdapter()) {
     this.runtime = runtime
@@ -91,6 +110,8 @@ export class EngineAPI {
     this.runtime.onTransformInteractionStart(() => this.beginTransformHistory())
     this.runtime.onTransformInteractionEnd(() => this.commitTransformHistory())
     void this.runtime.setViewSettings(readViewSettingsFromStore())
+    publishAnimationTimeline(this.currentProject)
+    publishTimelineTime(0)
     this.publishHistoryState()
   }
 
@@ -200,6 +221,10 @@ export class EngineAPI {
     return getLookPresets()
   }
 
+  getMotionPresets(targetKind: AnimationTargetKind): MotionPreset[] {
+    return getMotionPresets(targetKind)
+  }
+
   applyLookPreset(presetId: LookPresetId): void {
     const nextProject = applyProjectLookPreset(this.currentProject, presetId)
     const look = nextProject.look
@@ -242,8 +267,10 @@ export class EngineAPI {
     }
 
     publishStudioSetupObjects(this.currentProject)
+    publishAnimationTimeline(this.currentProject)
     publishEntities(this.currentScene)
     publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
+    this.refreshAnimationPreviewIfNeeded()
     this.commitCurrentSnapshot()
   }
 
@@ -270,11 +297,88 @@ export class EngineAPI {
     }
 
     publishStudioSetupObjects(this.currentProject)
+    this.refreshAnimationPreviewIfNeeded()
     this.commitCurrentSnapshot()
   }
 
   selectStudioObject(nodeId: NodeId | null): void {
     publishSelectedStudioObject(nodeId)
+  }
+
+  addMotionPreset(targetNodeId: NodeId, presetId: MotionPresetId): string {
+    const nextProject = addLayerToActiveShot(this.currentProject, { targetNodeId, presetId })
+    const row = nextProject.shots[nextProject.activeShotId].sequence.rows
+      .find((entry) => entry.targetNodeId === targetNodeId)
+    const nextLayerId = row?.items.at(-1)?.id
+
+    this.currentProject = nextProject
+    publishAnimationTimeline(this.currentProject)
+    this.refreshAnimationPreviewIfNeeded()
+    this.commitCurrentSnapshot()
+
+    if (!nextLayerId) {
+      throw new Error(`Failed to add motion preset ${presetId} to ${targetNodeId}`)
+    }
+
+    return nextLayerId
+  }
+
+  updateMotionLayer(
+    layerId: string,
+    patch: Partial<Pick<MotionLayer, 'startTimeSeconds' | 'durationSeconds' | 'strength' | 'enabled' | 'name'>>
+      & { parameters?: MotionLayer['parameters'] },
+  ): void {
+    this.currentProject = updateActiveShotLayer(this.currentProject, layerId, patch)
+    publishAnimationTimeline(this.currentProject)
+    this.refreshAnimationPreviewIfNeeded()
+    this.commitCurrentSnapshot()
+  }
+
+  removeMotionLayer(layerId: string): void {
+    this.currentProject = removeLayerFromActiveShot(this.currentProject, layerId)
+    publishAnimationTimeline(this.currentProject)
+    this.refreshAnimationPreviewIfNeeded()
+    this.commitCurrentSnapshot()
+  }
+
+  previewAnimation(timeSeconds: number): void {
+    this.currentTimelineTimeSeconds = timeSeconds
+    publishTimelineTime(timeSeconds)
+
+    if (!this.currentScene) {
+      this.currentAnimationPreviewScene = null
+      return
+    }
+
+    const previous = this.currentAnimationPreviewScene ?? this.currentScene
+    const next = evaluateActiveShot(this.currentProject, this.currentScene, timeSeconds)
+    const delta = diffSceneDocs(previous, next)
+    this.currentAnimationPreviewScene = next
+
+    if (!isSceneDeltaEmpty(delta)) {
+      void this.runtime.applyDirty(delta, next)
+    }
+
+    publishTrackedObjectTransform(next, this.getTrackedProductRootNodeId())
+  }
+
+  clearAnimationPreview(): void {
+    this.currentTimelineTimeSeconds = 0
+    publishTimelineTime(0)
+
+    if (!this.currentScene || !this.currentAnimationPreviewScene) {
+      this.currentAnimationPreviewScene = null
+      return
+    }
+
+    const delta = diffSceneDocs(this.currentAnimationPreviewScene, this.currentScene)
+    this.currentAnimationPreviewScene = null
+
+    if (!isSceneDeltaEmpty(delta)) {
+      void this.runtime.applyDirty(delta, this.currentScene)
+    }
+
+    publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
   }
 
   setTransform(
@@ -575,6 +679,7 @@ export class EngineAPI {
       this.currentScene = nextScene
       this.currentProductScene = cloneSceneDoc(model.canonicalScene)
       this.currentPreviewScene = null
+      this.currentAnimationPreviewScene = null
       this.currentAssets = nextAssets
       this.runtime.setSceneAssets(nextAssets)
       await this.runtime.buildFromCanonical(this.currentScene)
@@ -583,6 +688,8 @@ export class EngineAPI {
       publishHasModel(true)
       publishProjectLook(this.currentProject)
       publishStudioSetupObjects(this.currentProject)
+      publishAnimationTimeline(this.currentProject)
+      publishTimelineTime(0)
       publishEntities(this.currentScene)
       publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
       this.initializeHistory()
@@ -709,6 +816,7 @@ export class EngineAPI {
     void this.runtime.applyDirty(delta, this.currentScene)
     publishEntities(this.currentScene)
     publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
+    this.refreshAnimationPreviewIfNeeded()
     this.commitCurrentSnapshot()
   }
 
@@ -793,12 +901,15 @@ export class EngineAPI {
         ? cloneProjectDoc(snapshot.project)
         : createDefaultProject()
       this.currentScene = snapshot.scene ? cloneSceneDoc(snapshot.scene) : null
+      this.currentAnimationPreviewScene = null
       this.runtime.setSceneAssets(this.currentAssets)
       await this.runtime.buildFromCanonical(this.currentScene ?? createEmptySceneDoc())
       await this.runtime.setViewSettings(snapshot.viewSettings)
       publishViewSettings(snapshot.viewSettings)
       publishProjectLook(this.currentProject)
       publishStudioSetupObjects(this.currentProject)
+      publishAnimationTimeline(this.currentProject)
+      publishTimelineTime(0)
       publishEntities(this.currentScene)
       publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
     } finally {
@@ -847,6 +958,14 @@ export class EngineAPI {
       transformMode: this.getTransformGizmoMode(),
       pathTracingReadiness: this.getPathTracingReadinessReport(),
     })
+  }
+
+  private refreshAnimationPreviewIfNeeded(): void {
+    if (!this.currentAnimationPreviewScene) {
+      return
+    }
+
+    this.previewAnimation(this.currentTimelineTimeSeconds)
   }
 }
 

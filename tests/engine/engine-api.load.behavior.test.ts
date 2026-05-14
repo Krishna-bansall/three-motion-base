@@ -102,6 +102,15 @@ function resetStore(): void {
     studioSetupObjects: [],
     selectedStudioObjectNodeId: null,
     activeLookId: 'look-studio-neutral',
+    activeShot: {
+      id: 'shot-main',
+      name: 'Main Shot',
+      durationSeconds: 5,
+      fps: 30,
+      aspect: { width: 16, height: 9 },
+    },
+    timelineRows: [],
+    timelineTimeSeconds: 0,
     ...createDefaultViewSettings(),
   })
 }
@@ -412,6 +421,35 @@ test('EngineAPI applies a studio preset before import and preserves it through r
 
   assert.deepEqual(engine.getProjectSnapshot().studioScene.studioGeometry, studioGeometryBeforeReplacement)
   assert.equal(engine.getCanonicalSceneSnapshot()?.nodes['node-studio-plinth']?.parentId, 'node-studio-root')
+})
+
+test('EngineAPI publishes timeline rows and motion layers for animate mode', async () => {
+  const { engine } = createMountedEngine()
+
+  await withMockedLoader(
+    async () => ({ scene: createStubGLTFScene('animated-product') }),
+    async () => {
+      await engine.loadModel('/models/animated-product.glb')
+    },
+  )
+
+  const layerId = engine.addMotionPreset('node-render-camera', 'camera-dolly-in')
+  engine.updateMotionLayer(layerId, {
+    startTimeSeconds: 1,
+    durationSeconds: 4,
+    strength: 0.8,
+  })
+  engine.previewAnimation(1.5)
+
+  const state = useEngineStore.getState()
+  const cameraRow = state.timelineRows.find((row) => row.targetNodeId === 'node-render-camera')
+
+  assert.equal(state.activeShot.id, 'shot-main')
+  assert.equal(state.timelineTimeSeconds, 1.5)
+  assert.equal(cameraRow?.layers[0]?.id, layerId)
+  assert.equal(cameraRow?.layers[0]?.presetId, 'camera-dolly-in')
+  assert.equal(cameraRow?.layers[0]?.durationSeconds, 4)
+  assert.equal(cameraRow?.layers[0]?.strength, 0.8)
 })
 
 test('loadModelFromFile uses the shared load path and revokes its blob URL', async () => {

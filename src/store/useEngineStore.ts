@@ -11,6 +11,7 @@ import {
   type CinematicSettings,
   type HDRIPreset,
 } from '../engine/viewSettings'
+import type { AnimationTargetKind, MotionLayerParameters, MotionPresetId, SequenceCategory } from '../engine/project/types'
 
 export interface EntityInfo {
   nodeId: string
@@ -45,6 +46,39 @@ export interface StudioSetupObjectInfo {
   }
 }
 
+export interface TimelineLayerInfo {
+  id: string
+  name: string
+  targetNodeId: string
+  targetKind: AnimationTargetKind
+  presetId: MotionPresetId
+  enabled: boolean
+  startTimeSeconds: number
+  durationSeconds: number
+  strength: number
+  parameters: MotionLayerParameters
+}
+
+export interface TimelineRowInfo {
+  id: string
+  name: string
+  targetNodeId: string
+  targetKind: AnimationTargetKind
+  category: SequenceCategory
+  layers: TimelineLayerInfo[]
+}
+
+export interface ActiveShotInfo {
+  id: string
+  name: string
+  durationSeconds: number
+  fps: number
+  aspect: {
+    width: number
+    height: number
+  }
+}
+
 export interface EngineState {
   // ── Model ──
   isLoading: boolean
@@ -56,6 +90,9 @@ export interface EngineState {
   studioSetupObjects: StudioSetupObjectInfo[]
   selectedStudioObjectNodeId: string | null
   activeLookId: string
+  activeShot: ActiveShotInfo
+  timelineRows: TimelineRowInfo[]
+  timelineTimeSeconds: number
 
   // ── Lighting ──
   activeHDRI: HDRIPreset
@@ -78,6 +115,9 @@ export interface EngineState {
   setStudioSetupObjects: (objects: StudioSetupObjectInfo[]) => void
   setSelectedStudioObjectNodeId: (nodeId: string | null) => void
   setActiveLookId: (lookId: string) => void
+  setActiveShot: (shot: ActiveShotInfo) => void
+  setTimelineRows: (rows: TimelineRowInfo[]) => void
+  setTimelineTimeSeconds: (time: number) => void
   setActiveHDRI: (h: HDRIPreset) => void
   setExposure: (v: number) => void
   setBloom: (b: BloomSettings) => void
@@ -96,6 +136,15 @@ export const useEngineStore = create<EngineState>((set) => ({
   studioSetupObjects: [],
   selectedStudioObjectNodeId: null,
   activeLookId: 'look-studio-neutral',
+  activeShot: {
+    id: 'shot-main',
+    name: 'Main Shot',
+    durationSeconds: 5,
+    fps: 30,
+    aspect: { width: 16, height: 9 },
+  },
+  timelineRows: [],
+  timelineTimeSeconds: 0,
 
   ...createDefaultViewSettings(),
 
@@ -107,6 +156,9 @@ export const useEngineStore = create<EngineState>((set) => ({
   setStudioSetupObjects: (objects) => set({ studioSetupObjects: objects }),
   setSelectedStudioObjectNodeId: (nodeId) => set({ selectedStudioObjectNodeId: nodeId }),
   setActiveLookId: (lookId) => set({ activeLookId: lookId }),
+  setActiveShot: (shot) => set({ activeShot: shot }),
+  setTimelineRows: (rows) => set({ timelineRows: rows }),
+  setTimelineTimeSeconds: (time) => set({ timelineTimeSeconds: time }),
   setActiveHDRI: (h) => set({ activeHDRI: h }),
   setExposure: (v) => set({ exposure: v }),
   setBloom: (b) => set({ bloom: b }),

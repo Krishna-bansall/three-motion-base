@@ -68,6 +68,15 @@ function resetStore(): void {
     studioSetupObjects: [],
     selectedStudioObjectNodeId: null,
     activeLookId: 'look-studio-neutral',
+    activeShot: {
+      id: 'shot-main',
+      name: 'Main Shot',
+      durationSeconds: 5,
+      fps: 30,
+      aspect: { width: 16, height: 9 },
+    },
+    timelineRows: [],
+    timelineTimeSeconds: 0,
     ...createDefaultViewSettings(),
   })
 }

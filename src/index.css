@@ -1399,3 +1399,337 @@ html, body, #root {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+.workspace-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-layout-animate .viewport-area {
+  min-height: 0;
+}
+
+.sidebar-title-row {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+
+.mode-toggle-btn,
+.timeline-tab,
+.target-pill,
+.preset-card,
+.danger-btn,
+.timeline-row-label,
+.timeline-layer-chip {
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.mode-toggle-btn {
+  height: 34px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mode-toggle-btn.active,
+.timeline-tab.active,
+.target-pill.active,
+.timeline-layer-chip.active {
+  background: var(--accent-glow);
+  border-color: var(--border-active);
+  color: var(--text-primary);
+}
+
+.panel-kicker,
+.timeline-overline,
+.section-label,
+.timeline-row-category,
+.target-pill-kind {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.timeline-shot-meta,
+.timeline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.timeline-shot-meta span,
+.timeline-meta span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.panel-section {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.target-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.target-pill {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.preset-card {
+  min-height: 84px;
+  padding: 12px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  transition: border-color 0.2s var(--ease-out), transform 0.2s var(--ease-out);
+}
+
+.preset-card:hover,
+.timeline-tab:hover,
+.target-pill:hover,
+.danger-btn:hover,
+.mode-toggle-btn:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.layer-editor,
+.field-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field span {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.field input,
+.field select {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.field input[type='range'] {
+  height: auto;
+  padding: 0;
+}
+
+.checkbox-field {
+  flex-direction: row;
+  align-items: center;
+}
+
+.checkbox-field input {
+  width: 16px;
+  height: 16px;
+}
+
+.danger-btn {
+  height: 38px;
+  border-radius: 10px;
+}
+
+.timeline-shell {
+  border-top: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(180deg, rgba(17, 17, 24, 0.96), rgba(10, 10, 15, 0.98)),
+    radial-gradient(circle at top left, rgba(124, 106, 255, 0.16), transparent 40%);
+  padding: 18px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 240px;
+}
+
+.timeline-header,
+.timeline-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.timeline-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.timeline-category-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.timeline-tab {
+  padding: 8px 12px;
+  border-radius: 999px;
+  text-transform: capitalize;
+}
+
+.timeline-scrubber {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: min(360px, 100%);
+}
+
+.timeline-scrubber span {
+  min-width: 54px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.timeline-scrubber input {
+  flex: 1;
+}
+
+.timeline-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.timeline-row-label {
+  min-width: 0;
+  height: 54px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 5px;
+  text-align: left;
+}
+
+.timeline-row-track {
+  position: relative;
+  min-height: 54px;
+  border-radius: 14px;
+  border: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    rgba(255, 255, 255, 0.02);
+  background-size: calc(100% / 10) 100%;
+  overflow: hidden;
+}
+
+.timeline-row-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding-left: 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.timeline-layer-chip {
+  position: absolute;
+  top: 8px;
+  height: 38px;
+  border-radius: 10px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.timeline-layer-chip.muted {
+  opacity: 0.45;
+}
+
+@media (max-width: 1100px) {
+  .app-layout {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    height: auto;
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .timeline-header,
+  .timeline-controls,
+  .timeline-row {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .timeline-category-tabs {
+    flex-wrap: wrap;
+  }
+}

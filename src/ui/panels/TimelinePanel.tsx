@@ -1,0 +1,120 @@
+import type { EngineAPI } from '../../engine/EngineAPI'
+import { useEngineStore } from '../../store/useEngineStore'
+
+type TimelineCategory = 'all' | 'objects' | 'camera' | 'lights'
+
+interface TimelinePanelProps {
+  engine: EngineAPI
+  category: TimelineCategory
+  onCategoryChange: (category: TimelineCategory) => void
+  selectedTargetNodeId: string | null
+  selectedLayerId: string | null
+  onSelectTarget: (nodeId: string) => void
+  onSelectLayer: (layerId: string | null) => void
+}
+
+export function TimelinePanel({
+  engine,
+  category,
+  onCategoryChange,
+  selectedTargetNodeId,
+  selectedLayerId,
+  onSelectTarget,
+  onSelectLayer,
+}: TimelinePanelProps) {
+  const activeShot = useEngineStore((s) => s.activeShot)
+  const rows = useEngineStore((s) => s.timelineRows)
+  const timeSeconds = useEngineStore((s) => s.timelineTimeSeconds)
+  const visibleRows = category === 'all'
+    ? rows
+    : rows.filter((row) => row.category === category)
+
+  return (
+    <section className="timeline-shell" aria-label="Animation timeline">
+      <div className="timeline-header">
+        <div>
+          <div className="timeline-overline">Main Sequence</div>
+          <h2>{activeShot.name}</h2>
+        </div>
+        <div className="timeline-meta">
+          <span>{activeShot.durationSeconds}s</span>
+          <span>{activeShot.fps} fps</span>
+        </div>
+      </div>
+
+      <div className="timeline-controls">
+        <div className="timeline-category-tabs">
+          {(['all', 'objects', 'camera', 'lights'] as TimelineCategory[]).map((value) => (
+            <button
+              key={value}
+              className={`timeline-tab ${category === value ? 'active' : ''}`}
+              onClick={() => onCategoryChange(value)}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+        <label className="timeline-scrubber">
+          <span>{timeSeconds.toFixed(2)}s</span>
+          <input
+            type="range"
+            min="0"
+            max={activeShot.durationSeconds}
+            step="0.01"
+            value={timeSeconds}
+            onChange={(event) => engine.previewAnimation(Number(event.target.value))}
+          />
+        </label>
+      </div>
+
+      <div className="timeline-grid">
+        {visibleRows.map((row) => (
+          <div
+            key={row.id}
+            className={`timeline-row ${selectedTargetNodeId === row.targetNodeId ? 'active' : ''}`}
+          >
+            <button
+              className="timeline-row-label"
+              onClick={() => {
+                onSelectTarget(row.targetNodeId)
+                onSelectLayer(row.layers[0]?.id ?? null)
+              }}
+            >
+              <span className="timeline-row-category">{row.category}</span>
+              <strong>{row.name}</strong>
+            </button>
+            <div className="timeline-row-track">
+              {row.layers.length === 0 ? (
+                <div className="timeline-row-empty">Add a preset</div>
+              ) : row.layers.map((layer) => (
+                <button
+                  key={layer.id}
+                  className={`timeline-layer-chip ${selectedLayerId === layer.id ? 'active' : ''} ${layer.enabled ? '' : 'muted'}`}
+                  style={layerStyle(layer.startTimeSeconds, layer.durationSeconds, activeShot.durationSeconds)}
+                  onClick={() => {
+                    onSelectTarget(row.targetNodeId)
+                    onSelectLayer(layer.id)
+                  }}
+                  title={`${layer.name} · ${layer.startTimeSeconds.toFixed(2)}s → ${(layer.startTimeSeconds + layer.durationSeconds).toFixed(2)}s`}
+                >
+                  <span>{layer.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function layerStyle(startTimeSeconds: number, durationSeconds: number, shotDurationSeconds: number) {
+  const total = Math.max(shotDurationSeconds, 0.1)
+  const left = (startTimeSeconds / total) * 100
+  const width = Math.max((durationSeconds / total) * 100, 6)
+
+  return {
+    left: `${left}%`,
+    width: `${width}%`,
+  }
+}

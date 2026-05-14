@@ -1,7 +1,10 @@
 import {
   useEngineStore,
+  type ActiveShotInfo,
   type EntityInfo,
   type StudioSetupObjectInfo,
+  type TimelineLayerInfo,
+  type TimelineRowInfo,
   type TrackedObjectTransform,
 } from '../../store/useEngineStore'
 import type { ProjectDoc } from '../project/types'
@@ -128,6 +131,46 @@ export function publishSelectedStudioObject(nodeId: string | null): void {
 
 export function publishProjectLook(project: ProjectDoc): void {
   useEngineStore.getState().setActiveLookId(project.look.id)
+}
+
+export function publishAnimationTimeline(project: ProjectDoc): void {
+  const activeShot = project.shots[project.activeShotId]
+  const store = useEngineStore.getState()
+  const shotInfo: ActiveShotInfo = {
+    id: activeShot.id,
+    name: activeShot.name,
+    durationSeconds: activeShot.durationSeconds,
+    fps: activeShot.fps,
+    aspect: { ...activeShot.aspect },
+  }
+  const rows: TimelineRowInfo[] = activeShot.sequence.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    targetNodeId: row.targetNodeId,
+    targetKind: row.targetKind,
+    category: row.category,
+    layers: row.items
+      .filter((item) => item.kind === 'layer')
+      .map((item): TimelineLayerInfo => ({
+        id: item.id,
+        name: item.name,
+        targetNodeId: item.targetNodeId,
+        targetKind: item.targetKind,
+        presetId: item.presetId,
+        enabled: item.enabled,
+        startTimeSeconds: item.startTimeSeconds,
+        durationSeconds: item.durationSeconds,
+        strength: item.strength,
+        parameters: structuredClone(item.parameters),
+      })),
+  }))
+
+  store.setActiveShot(shotInfo)
+  store.setTimelineRows(rows)
+}
+
+export function publishTimelineTime(timeSeconds: number): void {
+  useEngineStore.getState().setTimelineTimeSeconds(timeSeconds)
 }
 
 export function publishEntities(scene: SceneDoc | null): void {

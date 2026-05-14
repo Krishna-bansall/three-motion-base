@@ -389,6 +389,21 @@ export function updateActiveShotLayer(
   return updated
 }
 
+export function removeLayerFromActiveShot(project: ProjectDoc, layerId: string): ProjectDoc {
+  const updated = cloneProjectDoc(project)
+  const activeShot = updated.shots[updated.activeShotId]
+
+  for (const row of activeShot.sequence.rows) {
+    const index = row.items.findIndex((item) => item.kind === 'layer' && item.id === layerId)
+    if (index >= 0) {
+      row.items.splice(index, 1)
+      return updated
+    }
+  }
+
+  throw new Error(`Unknown active shot layer: ${layerId}`)
+}
+
 export function applyStudioPreset(project: ProjectDoc, presetId: StudioPresetId): ProjectDoc {
   const updated = cloneProjectDoc(project)
 

@@ -21,6 +21,7 @@ export class ThreeAdapter implements RuntimeAdapter {
   private renderer: ThreeRenderer | null = null
   private sceneAssets: RuntimeSceneAssetBundle | null = null
   private activeRootNodeId: NodeId | null = null
+  private activeSceneCameraNodeId: NodeId | null = null
   private nodeObjects = new Map<NodeId, THREE.Object3D>()
   private materialObjects = new Map<string, THREE.Material[]>()
   private viewSettings: ViewSettings = createDefaultViewSettings()
@@ -49,6 +50,7 @@ export class ThreeAdapter implements RuntimeAdapter {
     this.renderer?.unmount()
     this.renderer = null
     this.activeRootNodeId = null
+    this.activeSceneCameraNodeId = null
     this.nodeObjects.clear()
     this.materialObjects.clear()
   }
@@ -69,6 +71,7 @@ export class ThreeAdapter implements RuntimeAdapter {
 
     if (scene.roots.length === 0) {
       this.activeRootNodeId = null
+      this.activeSceneCameraNodeId = null
       return
     }
 
@@ -90,6 +93,7 @@ export class ThreeAdapter implements RuntimeAdapter {
     const interactionNodeId = this.resolveInteractionNodeId(scene, instance.rootNodeId)
     const interactionObject = interactionNodeId ? this.nodeObjects.get(interactionNodeId) : null
     this.activeRootNodeId = interactionNodeId
+    this.activeSceneCameraNodeId = this.resolveSceneCameraNodeId(scene)
 
     if (interactionObject) {
       this.renderer.setInteractionTarget(interactionObject)
@@ -257,6 +261,18 @@ export class ThreeAdapter implements RuntimeAdapter {
       object.near = node.camera.near
       object.far = node.camera.far
       object.updateProjectionMatrix()
+
+      if (nodeId === this.activeSceneCameraNodeId) {
+        const activeCamera = this.renderer?.camera
+        if (activeCamera) {
+          activeCamera.position.set(...node.t)
+          activeCamera.quaternion.set(...node.r)
+          activeCamera.fov = node.camera.fovDegrees
+          activeCamera.near = node.camera.near
+          activeCamera.far = node.camera.far
+          activeCamera.updateProjectionMatrix()
+        }
+      }
     }
 
     if (object instanceof THREE.Light && node.light) {
@@ -288,6 +304,11 @@ export class ThreeAdapter implements RuntimeAdapter {
     }
 
     return fallbackRootNodeId || scene.roots[0] || null
+  }
+
+  private resolveSceneCameraNodeId(scene: SceneDoc): NodeId | null {
+    const cameraNode = Object.values(scene.nodes).find((node) => node.camera)
+    return cameraNode?.id ?? null
   }
 }
 
