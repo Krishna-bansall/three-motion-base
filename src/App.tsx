@@ -55,7 +55,7 @@ function App() {
     : (timelineRows[0]?.targetNodeId ?? null)
 
   const effectiveSelectedLayerId = selectedLayerId && timelineRows.some(
-    (row) => row.layers.some((layer) => layer.id === selectedLayerId),
+    (row) => row.tracks.some((track) => track.layers.some((layer) => layer.id === selectedLayerId)),
   )
     ? selectedLayerId
     : null
@@ -108,6 +108,25 @@ function App() {
     timelinePlaybackActive,
     timelineTimeSeconds,
   ])
+
+  // Space key toggles timeline playback (only in animate mode, not while typing in inputs)
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (editorMode !== 'animate') return
+      if (event.code !== 'Space') return
+
+      const target = event.target as HTMLElement | null
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) {
+        return
+      }
+
+      event.preventDefault()
+      handleToggleTimelinePlayback()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [editorMode, handleToggleTimelinePlayback])
 
   useEffect(() => {
     window.threeMotion = engine.getConsoleAPI()

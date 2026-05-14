@@ -1,5 +1,6 @@
 import { useEngineStore } from '../../store/useEngineStore'
 import { getTimelineScrubberStep } from './timelinePlayback'
+import { PlayIcon, PauseIcon } from './icons'
 
 type TimelineCategory = 'all' | 'objects' | 'camera' | 'lights'
 
@@ -64,8 +65,10 @@ export function TimelinePanel({
             onClick={onTogglePlayback}
             disabled={rows.length === 0}
             aria-pressed={isPlaying}
+            aria-label={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+            title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
           >
-            {isPlaying ? 'Pause' : 'Play'}
+            {isPlaying ? <PauseIcon /> : <PlayIcon />}
           </button>
           <label className="timeline-scrubber">
             <span>{timeSeconds.toFixed(2)} / {activeShot.durationSeconds.toFixed(2)}s</span>
@@ -82,41 +85,45 @@ export function TimelinePanel({
       </div>
 
       <div className="timeline-grid">
-        {visibleRows.map((row) => (
-          <div
-            key={row.id}
-            className={`timeline-row ${selectedTargetNodeId === row.targetNodeId ? 'active' : ''}`}
-          >
-            <button
-              className="timeline-row-label"
-              onClick={() => {
-                onSelectTarget(row.targetNodeId)
-                onSelectLayer(row.layers[0]?.id ?? null)
-              }}
+        {visibleRows.map((row) => {
+          const rowLayers = row.tracks.flatMap((track) => track.layers)
+
+          return (
+            <div
+              key={row.id}
+              className={`timeline-row ${selectedTargetNodeId === row.targetNodeId ? 'active' : ''}`}
             >
-              <span className="timeline-row-category">{row.category}</span>
-              <strong>{row.name}</strong>
-            </button>
-            <div className="timeline-row-track">
-              {row.layers.length === 0 ? (
-                <div className="timeline-row-empty">Add a preset</div>
-              ) : row.layers.map((layer) => (
-                <button
-                  key={layer.id}
-                  className={`timeline-layer-chip ${selectedLayerId === layer.id ? 'active' : ''} ${layer.enabled ? '' : 'muted'}`}
-                  style={layerStyle(layer.startTimeSeconds, layer.durationSeconds, activeShot.durationSeconds)}
-                  onClick={() => {
-                    onSelectTarget(row.targetNodeId)
-                    onSelectLayer(layer.id)
-                  }}
-                  title={`${layer.name} · ${layer.startTimeSeconds.toFixed(2)}s → ${(layer.startTimeSeconds + layer.durationSeconds).toFixed(2)}s`}
-                >
-                  <span>{layer.name}</span>
-                </button>
-              ))}
+              <button
+                className="timeline-row-label"
+                onClick={() => {
+                  onSelectTarget(row.targetNodeId)
+                  onSelectLayer(rowLayers[0]?.id ?? null)
+                }}
+              >
+                <span className="timeline-row-category">{row.category}</span>
+                <strong>{row.name}</strong>
+              </button>
+              <div className="timeline-row-track">
+                {rowLayers.length === 0 ? (
+                  <div className="timeline-row-empty">Add a preset</div>
+                ) : rowLayers.map((layer) => (
+                  <button
+                    key={layer.id}
+                    className={`timeline-layer-chip ${selectedLayerId === layer.id ? 'active' : ''} ${layer.enabled ? '' : 'muted'}`}
+                    style={layerStyle(layer.startTimeSeconds, layer.durationSeconds, activeShot.durationSeconds)}
+                    onClick={() => {
+                      onSelectTarget(row.targetNodeId)
+                      onSelectLayer(layer.id)
+                    }}
+                    title={`${layer.name} · ${layer.startTimeSeconds.toFixed(2)}s → ${(layer.startTimeSeconds + layer.durationSeconds).toFixed(2)}s`}
+                  >
+                    <span>{layer.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </section>
   )
