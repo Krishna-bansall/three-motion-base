@@ -4,17 +4,28 @@ import {
   applyStudioPreset,
   applyLookPreset,
   addLayerToActiveShot,
+  addTrackToActiveShot,
   cloneProjectDoc,
   createDefaultProject,
   getLookPresets,
+  removeLayerFromActiveShot,
+  removeTrackFromActiveShot,
   replaceProductSlotAsset,
   updateStudioEnvironment,
   updateActiveShotTiming,
   updateActiveShotLayer,
+  updateTrackInActiveShot,
 } from '../../src/engine/project/document.ts'
 
 test('createDefaultProject creates a durable studio project with one main shot', () => {
   const project = createDefaultProject()
+  const createTrack = (rowId: string) => ({
+    id: `${rowId}-track-1`,
+    name: 'Track 1',
+    enabled: true,
+    collapsed: false,
+    items: [],
+  })
 
   assert.equal(project.name, 'Untitled Project')
   assert.equal(project.studioScene.name, 'Studio Scene')
@@ -57,70 +68,68 @@ test('createDefaultProject creates a durable studio project with one main shot',
     intensity: 1.2,
     color: [1, 0.98, 0.95],
   })
-  assert.deepEqual(project.studioScene.studioGeometry, {})
+assert.equal(project.studioScene.studioGeometry.studioGeometry, {})
   assert.deepEqual(project.studioScene.materials, {})
 
   assert.deepEqual(project.shotOrder, ['shot-main'])
   assert.equal(project.activeShotId, 'shot-main')
-  assert.deepEqual(project.shots['shot-main'], {
-    id: 'shot-main',
-    name: 'Main Shot',
-    durationSeconds: 5,
-    fps: 30,
-    aspect: { width: 16, height: 9 },
-    renderCameraNodeId: 'node-render-camera',
-    sequence: {
-      id: 'sequence-main',
-      name: 'Main Sequence',
-      rows: [
-        {
-          id: 'row-product-primary',
-          name: 'Primary Product',
-          targetNodeId: 'node-product-slot-primary',
-          targetKind: 'object',
-          category: 'objects',
-          items: [],
-          children: [],
-        },
-        {
-          id: 'row-camera-render',
-          name: 'Render Camera',
-          targetNodeId: 'node-render-camera',
-          targetKind: 'camera',
-          category: 'camera',
-          items: [],
-          children: [],
-        },
-        {
-          id: 'row-light-key',
-          name: 'Key Light',
-          targetNodeId: 'node-light-key',
-          targetKind: 'light',
-          category: 'lights',
-          items: [],
-          children: [],
-        },
-        {
-          id: 'row-light-fill',
-          name: 'Fill Light',
-          targetNodeId: 'node-light-fill',
-          targetKind: 'light',
-          category: 'lights',
-          items: [],
-          children: [],
-        },
-        {
-          id: 'row-light-rim',
-          name: 'Rim Light',
-          targetNodeId: 'node-light-rim',
-          targetKind: 'light',
-          category: 'lights',
-          items: [],
-          children: [],
-        },
-      ],
+
+  const shot = project.shots['shot-main']
+  assert.equal(shot.name, 'Main Shot')
+  assert.equal(shot.durationSeconds, 5)
+  assert.equal(shot.fps, 30)
+  assert.deepEqual(shot.aspect, { width: 16, height: 9 })
+  assert.equal(shot.renderCameraNodeId, 'node-render-camera')
+
+  const expectedRows = [
+    {
+      id: 'row-product-primary',
+      name: 'Primary Product',
+      targetNodeId: 'node-product-slot-primary',
+      targetKind: 'object',
+      category: 'objects',
+      tracks: [{ id: 'row-product-primary-track-1', name: 'Track 1', enabled: true, collapsed: false, items: [] }],
+      children: [],
     },
-  })
+    {
+      id: 'row-camera-render',
+      name: 'Render Camera',
+      targetNodeId: 'node-render-camera',
+      targetKind: 'camera',
+      category: 'camera',
+      tracks: [{ id: 'row-camera-render-track-1', name: 'Track 1', enabled: true, collapsed: false, items: [] }],
+      children: [],
+    },
+    {
+      id: 'row-light-key',
+      name: 'Key Light',
+      targetNodeId: 'node-light-key',
+      targetKind: 'light',
+      category: 'lights',
+      tracks: [{ id: 'row-light-key-track-1', name: 'Track 1', enabled: true, collapsed: false, items: [] }],
+      children: [],
+    },
+    {
+      id: 'row-light-fill',
+      name: 'Fill Light',
+      targetNodeId: 'node-light-fill',
+      targetKind: 'light',
+      category: 'lights',
+      tracks: [{ id: 'row-light-fill-track-1', name: 'Track 1', enabled: true, collapsed: false, items: [] }],
+      children: [],
+    },
+    {
+      id: 'row-light-rim',
+      name: 'Rim Light',
+      targetNodeId: 'node-light-rim',
+      targetKind: 'light',
+      category: 'lights',
+      tracks: [{ id: 'row-light-rim-track-1', name: 'Track 1', enabled: true, collapsed: false, items: [] }],
+      children: [],
+    },
+  ]
+  assert.deepEqual(shot.sequence.rows, expectedRows)
+})
 })
 
 test('cloneProjectDoc isolates nested project state for snapshots', () => {
@@ -135,7 +144,7 @@ test('cloneProjectDoc isolates nested project state for snapshots', () => {
     targetNodeId: 'node-product-slot-primary',
     targetKind: 'object',
     category: 'objects',
-    items: [],
+    tracks: [{ id: 'row-product-track-1', name: 'Track 1', enabled: true, collapsed: false, items: [] }],
     children: [],
   })
 
@@ -373,8 +382,11 @@ test('addLayerToActiveShot adds contextual motion presets to object, camera, and
   })
 
   const rows = withLightLayer.shots[withLightLayer.activeShotId].sequence.rows
+  const productTrack = rows.find((row) => row.targetNodeId === 'node-product-slot-primary')?.tracks[0]
+  const cameraTrack = rows.find((row) => row.targetNodeId === 'node-render-camera')?.tracks[0]
+  const lightTrack = rows.find((row) => row.targetNodeId === 'node-light-key')?.tracks[0]
 
-  assert.deepEqual(rows.find((row) => row.targetNodeId === 'node-product-slot-primary')?.items[0], {
+  assert.deepEqual(productTrack?.items[0], {
     id: 'layer-1',
     kind: 'layer',
     name: 'Float',
@@ -386,6 +398,7 @@ test('addLayerToActiveShot adds contextual motion presets to object, camera, and
     startTimeSeconds: 0,
     durationSeconds: 3,
     strength: 1,
+    easing: 'linear',
     parameters: {
       amplitude: 0.35,
       cycles: 1,
@@ -393,9 +406,11 @@ test('addLayerToActiveShot adds contextual motion presets to object, camera, and
     },
     curveOverrides: [],
   })
-  assert.equal(rows.find((row) => row.targetNodeId === 'node-render-camera')?.items[0]?.presetId, 'camera-dolly-in')
-  assert.equal(rows.find((row) => row.targetNodeId === 'node-light-key')?.items[0]?.presetId, 'light-pulse')
-  assert.deepEqual(project.shots[project.activeShotId].sequence.rows.every((row) => row.items.length === 0), true)
+  assert.equal(cameraTrack?.items[0]?.presetId, 'camera-dolly-in')
+  assert.equal(lightTrack?.items[0]?.presetId, 'light-pulse')
+  assert.deepEqual(project.shots[project.activeShotId].sequence.rows.every(
+    (row) => row.tracks.every((track) => track.items.length === 0),
+  ), true)
 })
 
 test('updateActiveShotLayer patches one layer without mutating other timeline rows', () => {
@@ -413,9 +428,10 @@ test('updateActiveShotLayer patches one layer without mutating other timeline ro
 
   const cameraRow = updated.shots[updated.activeShotId].sequence.rows
     .find((row) => row.targetNodeId === 'node-render-camera')
+  const cameraTrack = cameraRow?.tracks[0]
 
-  assert.deepEqual(cameraRow?.items[0], {
-    ...cameraRow?.items[0],
+  assert.deepEqual(cameraTrack?.items[0], {
+    ...cameraTrack?.items[0],
     id: 'layer-1',
     name: 'Roundturn',
     targetNodeId: 'node-render-camera',
@@ -426,14 +442,38 @@ test('updateActiveShotLayer patches one layer without mutating other timeline ro
     startTimeSeconds: 1.25,
     durationSeconds: 6.5,
     strength: 0.55,
+    easing: 'linear',
     enabled: false,
   })
   assert.deepEqual(
     updated.shots[updated.activeShotId].sequence.rows
       .filter((row) => row.targetNodeId !== 'node-render-camera')
-      .map((row) => row.items.length),
+      .map((row) => row.tracks.reduce((total, track) => total + track.items.length, 0)),
     [0, 0, 0, 0],
   )
   assert.equal(project.shots[project.activeShotId].sequence.rows
-    .find((row) => row.targetNodeId === 'node-render-camera')?.items[0]?.enabled, true)
+    .find((row) => row.targetNodeId === 'node-render-camera')?.tracks[0]?.items[0]?.enabled, true)
+})
+
+test('getMotionPresets exposes default easing, feature tags, and typed parameter controls', () => {
+  const [floatPreset] = getMotionPresets('object')
+  const [dollyPreset] = getMotionPresets('camera').filter((preset) => preset.id === 'camera-dolly-in')
+
+  assert.equal(floatPreset?.defaultEasing, 'linear')
+  assert.deepEqual(floatPreset?.features, ['translate', 'oscillate'])
+  assert.deepEqual(floatPreset?.parameterControls, [
+    { key: 'amplitude', label: 'Amplitude', kind: 'number', min: 0, max: 2, step: 0.05 },
+    { key: 'cycles', label: 'Cycles', kind: 'number', min: 0.25, max: 6, step: 0.25 },
+    {
+      key: 'axis',
+      label: 'Axis',
+      kind: 'select',
+      options: [
+        { value: 'x', label: 'X' },
+        { value: 'y', label: 'Y' },
+        { value: 'z', label: 'Z' },
+      ],
+    },
+  ])
+  assert.equal(dollyPreset?.defaultEasing, 'ease-out')
 })

@@ -17,10 +17,19 @@ export type StudioTransformEdit = 'position' | 'rotation' | 'scale'
 export type LookPresetId = 'studio-neutral' | 'warm-hero' | 'cool-contrast'
 export type AnimationTargetKind = 'object' | 'camera' | 'light'
 export type SequenceCategory = 'objects' | 'camera' | 'lights'
+export type TrackId = string
 export type MotionItemId = string
 export type MotionItemKind = 'layer' | 'group'
 export type MotionLayerBlendMode = 'additive'
 export type MotionAxis = 'x' | 'y' | 'z'
+export type MotionEasing = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out'
+export type MotionFeatureTag =
+  | 'translate'
+  | 'rotate'
+  | 'light'
+  | 'oscillate'
+  | 'camera-move'
+  | 'hero-turn'
 export type MotionPresetId =
   | 'object-float'
   | 'object-spin'
@@ -168,13 +177,21 @@ export interface AnimationSequence {
   rows: SequenceRow[]
 }
 
+export interface SequenceTrack {
+  id: TrackId
+  name: string
+  enabled: boolean
+  collapsed: boolean
+  items: MotionSequenceItem[]
+}
+
 export interface SequenceRow {
   id: string
   name: string
   targetNodeId: NodeId
   targetKind: AnimationTargetKind
   category: SequenceCategory
-  items: MotionSequenceItem[]
+  tracks: SequenceTrack[]
   children: SequenceRow[]
 }
 
@@ -192,6 +209,7 @@ export interface MotionLayer {
   startTimeSeconds: number
   durationSeconds: number
   strength: number
+  easing: MotionEasing
   parameters: MotionLayerParameters
   curveOverrides: MotionCurveOverride[]
 }
@@ -209,6 +227,42 @@ export interface MotionGroup {
 
 export type MotionLayerParameters = Record<string, number | string | boolean>
 
+export interface MotionParameterOption {
+  value: string
+  label: string
+}
+
+interface MotionParameterControlBase {
+  key: string
+  label: string
+}
+
+export interface MotionNumberParameterControl extends MotionParameterControlBase {
+  kind: 'number'
+  min?: number
+  max?: number
+  step?: number
+}
+
+export interface MotionBooleanParameterControl extends MotionParameterControlBase {
+  kind: 'boolean'
+}
+
+export interface MotionTextParameterControl extends MotionParameterControlBase {
+  kind: 'text'
+}
+
+export interface MotionSelectParameterControl extends MotionParameterControlBase {
+  kind: 'select'
+  options: MotionParameterOption[]
+}
+
+export type MotionParameterControl =
+  | MotionNumberParameterControl
+  | MotionBooleanParameterControl
+  | MotionTextParameterControl
+  | MotionSelectParameterControl
+
 export interface MotionCurveOverride {
   propertyPath: string
   points: Array<{
@@ -222,5 +276,8 @@ export interface MotionPreset {
   targetKind: AnimationTargetKind
   name: string
   durationSeconds: number
+  defaultEasing: MotionEasing
+  features: MotionFeatureTag[]
+  parameterControls: MotionParameterControl[]
   parameters: MotionLayerParameters
 }

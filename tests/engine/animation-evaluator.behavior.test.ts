@@ -89,7 +89,7 @@ test('evaluateActiveShot applies coordinated object, camera, and light layers wi
 
   assert.deepEqual(baseScene, before)
   assert.equal(evaluated.nodes['node-product-slot-primary']?.t[1], 0.35)
-  assert.equal(evaluated.nodes['node-render-camera']?.t[2], 3.766)
+  assert.equal(evaluated.nodes['node-render-camera']?.t[2], 3.575)
   assert.equal(evaluated.nodes['node-light-key']?.light?.intensity, 1.74)
 })
 
@@ -127,4 +127,19 @@ test('evaluateActiveShot adds overlapping layers on the same target', () => {
   const evaluated = evaluateActiveShot(project, createBaseScene(), 0.75)
 
   assert.equal(evaluated.nodes['node-product-slot-primary']?.t[1], 0.45)
+})
+
+test('evaluateActiveShot applies layer easing before preset motion is evaluated', () => {
+  let project = createDefaultProject()
+  project = addLayerToActiveShot(project, {
+    targetNodeId: 'node-render-camera',
+    presetId: 'camera-dolly-in',
+  })
+  project = updateActiveShotLayer(project, 'layer-1', {
+    easing: 'ease-in',
+  })
+
+  const evaluated = evaluateActiveShot(project, createBaseScene(), 1)
+
+  assert.equal(evaluated.nodes['node-render-camera']?.t[2], 3.921)
 })

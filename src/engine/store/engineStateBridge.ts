@@ -5,6 +5,7 @@ import {
   type StudioSetupObjectInfo,
   type TimelineLayerInfo,
   type TimelineRowInfo,
+  type TimelineTrackInfo,
   type TrackedObjectTransform,
 } from '../../store/useEngineStore'
 import type { ProjectDoc } from '../project/types'
@@ -149,20 +150,27 @@ export function publishAnimationTimeline(project: ProjectDoc): void {
     targetNodeId: row.targetNodeId,
     targetKind: row.targetKind,
     category: row.category,
-    layers: row.items
-      .filter((item) => item.kind === 'layer')
-      .map((item): TimelineLayerInfo => ({
-        id: item.id,
-        name: item.name,
-        targetNodeId: item.targetNodeId,
-        targetKind: item.targetKind,
-        presetId: item.presetId,
-        enabled: item.enabled,
-        startTimeSeconds: item.startTimeSeconds,
-        durationSeconds: item.durationSeconds,
-        strength: item.strength,
-        parameters: structuredClone(item.parameters),
-      })),
+    tracks: row.tracks.map((track): TimelineTrackInfo => ({
+      id: track.id,
+      name: track.name,
+      enabled: track.enabled,
+      collapsed: track.collapsed,
+      layers: track.items
+        .filter((item) => item.kind === 'layer')
+        .map((item): TimelineLayerInfo => ({
+          id: item.id,
+          name: item.name,
+          targetNodeId: item.targetNodeId,
+          targetKind: item.targetKind,
+          presetId: item.presetId,
+          enabled: item.enabled,
+          startTimeSeconds: item.startTimeSeconds,
+          durationSeconds: item.durationSeconds,
+          strength: item.strength,
+          easing: item.easing,
+          parameters: structuredClone(item.parameters),
+        })),
+    })),
   }))
 
   store.setActiveShot(shotInfo)

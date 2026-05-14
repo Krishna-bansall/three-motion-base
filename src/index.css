@@ -1511,6 +1511,50 @@ html, body, #root {
   gap: 4px;
 }
 
+.track-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.track-pill {
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.2s var(--ease-out), color 0.2s var(--ease-out), background 0.2s var(--ease-out);
+}
+
+.track-pill.active {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--text-primary);
+}
+
+.track-pill:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--text-primary);
+}
+
+.track-add-pill {
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: transparent;
+  border: 1px dashed var(--border-subtle);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.2s var(--ease-out), color 0.2s var(--ease-out);
+}
+
+.track-add-pill:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--text-secondary);
+}
+
 .preset-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1518,14 +1562,30 @@ html, body, #root {
 }
 
 .preset-card {
-  min-height: 84px;
+  min-height: 118px;
   padding: 12px;
   border-radius: 12px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  gap: 10px;
   align-items: flex-start;
   transition: border-color 0.2s var(--ease-out), transform 0.2s var(--ease-out);
+}
+
+.preset-card-meta,
+.preset-feature-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preset-card-meta span,
+.preset-feature-chip {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 10px;
+  color: var(--text-secondary);
 }
 
 .preset-card:hover,
@@ -1708,7 +1768,68 @@ html, body, #root {
   text-align: left;
 }
 
-.timeline-row-track {
+.timeline-row-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.timeline-track {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.timeline-track.muted {
+  opacity: 0.55;
+}
+
+.timeline-track-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.timeline-track-name {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.timeline-track-remove-btn,
+.timeline-add-track-btn {
+  border: 1px dashed var(--border-subtle);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.2s var(--ease-out),
+    color 0.2s var(--ease-out),
+    background 0.2s var(--ease-out);
+}
+
+.timeline-track-remove-btn {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.timeline-add-track-btn {
+  border-radius: 10px;
+  min-height: 34px;
+  text-align: left;
+  padding: 0 12px;
+  font-size: 11px;
+}
+
+.timeline-track-remove-btn:hover,
+.timeline-add-track-btn:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--text-primary);
+}
+
+.timeline-track-lane {
   position: relative;
   min-height: 54px;
   border-radius: 14px;
@@ -1720,7 +1841,7 @@ html, body, #root {
   overflow: hidden;
 }
 
-.timeline-row-empty {
+.timeline-track-empty {
   height: 100%;
   display: flex;
   align-items: center;

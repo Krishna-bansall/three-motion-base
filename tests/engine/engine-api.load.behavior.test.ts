@@ -443,13 +443,15 @@ test('EngineAPI publishes timeline rows and motion layers for animate mode', asy
 
   const state = useEngineStore.getState()
   const cameraRow = state.timelineRows.find((row) => row.targetNodeId === 'node-render-camera')
+  const cameraLayer = cameraRow?.tracks[0]?.layers[0]
 
   assert.equal(state.activeShot.id, 'shot-main')
   assert.equal(state.timelineTimeSeconds, 1.5)
-  assert.equal(cameraRow?.layers[0]?.id, layerId)
-  assert.equal(cameraRow?.layers[0]?.presetId, 'camera-dolly-in')
-  assert.equal(cameraRow?.layers[0]?.durationSeconds, 4)
-  assert.equal(cameraRow?.layers[0]?.strength, 0.8)
+  assert.equal(cameraLayer?.id, layerId)
+  assert.equal(cameraLayer?.presetId, 'camera-dolly-in')
+  assert.equal(cameraLayer?.durationSeconds, 4)
+  assert.equal(cameraLayer?.strength, 0.8)
+  assert.equal(cameraLayer?.easing, 'ease-out')
 })
 
 test('loadModelFromFile uses the shared load path and revokes its blob URL', async () => {

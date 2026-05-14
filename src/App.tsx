@@ -222,6 +222,8 @@ function App() {
             selectedLayerId={effectiveSelectedLayerId}
             onSelectTarget={setSelectedTargetNodeId}
             onSelectLayer={setSelectedLayerId}
+            onAddTrack={(nodeId) => engine.addTrack(nodeId)}
+            onRemoveTrack={(nodeId, trackId) => engine.removeTrack(nodeId, trackId)}
           />
         ) : null}
       </div>

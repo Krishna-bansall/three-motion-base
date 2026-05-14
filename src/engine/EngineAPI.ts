@@ -23,6 +23,7 @@ import { convertCanonicalToBackendSchema } from './runtime/conversion/canonicalT
 import { EngineHistory, type EngineSnapshot } from './history/EngineHistory'
 import {
   addLayerToActiveShot,
+  addTrackToActiveShot,
   applyLookPreset as applyProjectLookPreset,
   applyStudioPreset as applyProjectStudioPreset,
   cloneProjectDoc,
@@ -30,9 +31,11 @@ import {
   getLookPresets,
   getMotionPresets,
   removeLayerFromActiveShot,
+  removeTrackFromActiveShot,
   replaceProductSlotAsset,
-  updateStudioEnvironment,
   updateActiveShotLayer,
+  updateStudioEnvironment,
+  updateTrackInActiveShot,
 } from './project/document'
 import type {
   AnimationTargetKind,
@@ -44,6 +47,7 @@ import type {
   ProjectDoc,
   StudioGeometryKind,
   StudioPresetId,
+  TrackId,
 } from './project/types'
 import {
   publishAnimationTimeline,
@@ -305,11 +309,19 @@ export class EngineAPI {
     publishSelectedStudioObject(nodeId)
   }
 
-  addMotionPreset(targetNodeId: NodeId, presetId: MotionPresetId): string {
-    const nextProject = addLayerToActiveShot(this.currentProject, { targetNodeId, presetId })
+  addMotionPreset(targetNodeId: NodeId, presetId: MotionPresetId, trackId?: TrackId): string {
+    const nextProject = addLayerToActiveShot(this.currentProject, { targetNodeId, presetId, trackId })
     const row = nextProject.shots[nextProject.activeShotId].sequence.rows
       .find((entry) => entry.targetNodeId === targetNodeId)
-    const nextLayerId = row?.items.at(-1)?.id
+
+    let nextLayerId: string | undefined
+
+    if (trackId) {
+      const track = row?.tracks.find((t) => t.id === trackId)
+      nextLayerId = track?.items.at(-1)?.id
+    } else {
+      nextLayerId = row?.tracks[0]?.items.at(-1)?.id
+    }
 
     this.currentProject = nextProject
     publishAnimationTimeline(this.currentProject)
@@ -323,9 +335,39 @@ export class EngineAPI {
     return nextLayerId
   }
 
+  addTrack(targetNodeId: NodeId, name?: string): string {
+    const nextProject = addTrackToActiveShot(this.currentProject, { targetNodeId, name })
+    const row = nextProject.shots[nextProject.activeShotId].sequence.rows
+      .find((entry) => entry.targetNodeId === targetNodeId)
+    const nextTrackId = row?.tracks.at(-1)?.id
+
+    this.currentProject = nextProject
+    publishAnimationTimeline(this.currentProject)
+    this.commitCurrentSnapshot()
+
+    if (!nextTrackId) {
+      throw new Error(`Failed to add track to ${targetNodeId}`)
+    }
+
+    return nextTrackId
+  }
+
+  removeTrack(targetNodeId: NodeId, trackId: string): void {
+    this.currentProject = removeTrackFromActiveShot(this.currentProject, { targetNodeId, trackId })
+    publishAnimationTimeline(this.currentProject)
+    this.refreshAnimationPreviewIfNeeded()
+    this.commitCurrentSnapshot()
+  }
+
+  updateTrack(trackId: string, patch: { name?: string; enabled?: boolean; collapsed?: boolean }): void {
+    this.currentProject = updateTrackInActiveShot(this.currentProject, { trackId, ...patch })
+    publishAnimationTimeline(this.currentProject)
+    this.commitCurrentSnapshot()
+  }
+
   updateMotionLayer(
     layerId: string,
-    patch: Partial<Pick<MotionLayer, 'startTimeSeconds' | 'durationSeconds' | 'strength' | 'enabled' | 'name'>>
+    patch: Partial<Pick<MotionLayer, 'startTimeSeconds' | 'durationSeconds' | 'strength' | 'enabled' | 'name' | 'easing'>>
       & { parameters?: MotionLayer['parameters'] },
   ): void {
     this.currentProject = updateActiveShotLayer(this.currentProject, layerId, patch)

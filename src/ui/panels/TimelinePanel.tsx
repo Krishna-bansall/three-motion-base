@@ -1,6 +1,5 @@
-import { useEngineStore } from '../../store/useEngineStore'
+import { useEngineStore, type TimelineTrackInfo } from '../../store/useEngineStore'
 import { getTimelineScrubberStep } from './timelinePlayback'
-import { PlayIcon, PauseIcon } from './icons'
 
 type TimelineCategory = 'all' | 'objects' | 'camera' | 'lights'
 
@@ -14,6 +13,8 @@ interface TimelinePanelProps {
   selectedLayerId: string | null
   onSelectTarget: (nodeId: string) => void
   onSelectLayer: (layerId: string | null) => void
+  onAddTrack: (targetNodeId: string) => void
+  onRemoveTrack: (targetNodeId: string, trackId: string) => void
 }
 
 export function TimelinePanel({
@@ -26,6 +27,8 @@ export function TimelinePanel({
   selectedLayerId,
   onSelectTarget,
   onSelectLayer,
+  onAddTrack,
+  onRemoveTrack,
 }: TimelinePanelProps) {
   const activeShot = useEngineStore((s) => s.activeShot)
   const rows = useEngineStore((s) => s.timelineRows)
@@ -65,10 +68,8 @@ export function TimelinePanel({
             onClick={onTogglePlayback}
             disabled={rows.length === 0}
             aria-pressed={isPlaying}
-            aria-label={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
-            title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
           >
-            {isPlaying ? <PauseIcon /> : <PlayIcon />}
+            {isPlaying ? 'Pause' : 'Play'}
           </button>
           <label className="timeline-scrubber">
             <span>{timeSeconds.toFixed(2)} / {activeShot.durationSeconds.toFixed(2)}s</span>
@@ -86,7 +87,7 @@ export function TimelinePanel({
 
       <div className="timeline-grid">
         {visibleRows.map((row) => {
-          const rowLayers = row.tracks.flatMap((track) => track.layers)
+          const firstLayer = row.tracks.flatMap((track) => track.layers)[0] ?? null
 
           return (
             <div
@@ -97,35 +98,93 @@ export function TimelinePanel({
                 className="timeline-row-label"
                 onClick={() => {
                   onSelectTarget(row.targetNodeId)
-                  onSelectLayer(rowLayers[0]?.id ?? null)
+                  onSelectLayer(firstLayer?.id ?? null)
                 }}
               >
                 <span className="timeline-row-category">{row.category}</span>
                 <strong>{row.name}</strong>
               </button>
-              <div className="timeline-row-track">
-                {rowLayers.length === 0 ? (
-                  <div className="timeline-row-empty">Add a preset</div>
-                ) : rowLayers.map((layer) => (
-                  <button
-                    key={layer.id}
-                    className={`timeline-layer-chip ${selectedLayerId === layer.id ? 'active' : ''} ${layer.enabled ? '' : 'muted'}`}
-                    style={layerStyle(layer.startTimeSeconds, layer.durationSeconds, activeShot.durationSeconds)}
-                    onClick={() => {
-                      onSelectTarget(row.targetNodeId)
-                      onSelectLayer(layer.id)
-                    }}
-                    title={`${layer.name} · ${layer.startTimeSeconds.toFixed(2)}s → ${(layer.startTimeSeconds + layer.durationSeconds).toFixed(2)}s`}
-                  >
-                    <span>{layer.name}</span>
-                  </button>
+              <div className="timeline-row-tracks">
+                {row.tracks.map((track) => (
+                  <TrackLane
+                    key={track.id}
+                    track={track}
+                    targetNodeId={row.targetNodeId}
+                    shotDurationSeconds={activeShot.durationSeconds}
+                    selectedLayerId={selectedLayerId}
+                    onSelectTarget={onSelectTarget}
+                    onSelectLayer={onSelectLayer}
+                    canRemove={row.tracks.length > 1}
+                    onRemoveTrack={() => onRemoveTrack(row.targetNodeId, track.id)}
+                  />
                 ))}
+                <button
+                  className="timeline-add-track-btn"
+                  onClick={() => onAddTrack(row.targetNodeId)}
+                >
+                  + Track
+                </button>
               </div>
             </div>
           )
         })}
       </div>
     </section>
+  )
+}
+
+function TrackLane(
+  props: {
+    track: TimelineTrackInfo
+    targetNodeId: string
+    shotDurationSeconds: number
+    selectedLayerId: string | null
+    onSelectTarget: (nodeId: string) => void
+    onSelectLayer: (layerId: string | null) => void
+    canRemove: boolean
+    onRemoveTrack: () => void
+  },
+) {
+  const {
+    track,
+    targetNodeId,
+    shotDurationSeconds,
+    selectedLayerId,
+    onSelectTarget,
+    onSelectLayer,
+    canRemove,
+    onRemoveTrack,
+  } = props
+
+  return (
+    <div className={`timeline-track ${track.enabled ? '' : 'muted'}`}>
+      <div className="timeline-track-header">
+        <span className="timeline-track-name">{track.name}</span>
+        {canRemove ? (
+          <button className="timeline-track-remove-btn" onClick={onRemoveTrack} title="Remove track">
+            Remove
+          </button>
+        ) : null}
+      </div>
+      <div className="timeline-track-lane">
+        {track.layers.length === 0 ? (
+          <div className="timeline-track-empty">Add a preset</div>
+        ) : track.layers.map((layer) => (
+          <button
+            key={layer.id}
+            className={`timeline-layer-chip ${selectedLayerId === layer.id ? 'active' : ''} ${layer.enabled ? '' : 'muted'}`}
+            style={layerStyle(layer.startTimeSeconds, layer.durationSeconds, shotDurationSeconds)}
+            onClick={() => {
+              onSelectTarget(targetNodeId)
+              onSelectLayer(layer.id)
+            }}
+            title={`${layer.name} · ${layer.startTimeSeconds.toFixed(2)}s → ${(layer.startTimeSeconds + layer.durationSeconds).toFixed(2)}s`}
+          >
+            <span>{layer.name}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 

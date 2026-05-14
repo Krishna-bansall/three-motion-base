@@ -1,6 +1,12 @@
 import type { ChangeEvent } from 'react'
 import type { EngineAPI } from '../../engine/EngineAPI'
-import type { MotionLayerParameters } from '../../engine/project/types'
+import type {
+  MotionEasing,
+  MotionFeatureTag,
+  MotionLayerParameters,
+  MotionParameterControl,
+  MotionPreset,
+} from '../../engine/project/types'
 import { useEngineStore } from '../../store/useEngineStore'
 
 interface AnimatePanelProps {
@@ -10,6 +16,13 @@ interface AnimatePanelProps {
   onSelectTarget: (nodeId: string) => void
   onSelectLayer: (layerId: string | null) => void
 }
+
+const EASING_OPTIONS: Array<{ value: MotionEasing; label: string }> = [
+  { value: 'linear', label: 'Linear' },
+  { value: 'ease-in', label: 'Ease In' },
+  { value: 'ease-out', label: 'Ease Out' },
+  { value: 'ease-in-out', label: 'Ease In-Out' },
+]
 
 export function AnimatePanel({
   engine,
@@ -21,8 +34,15 @@ export function AnimatePanel({
   const activeShot = useEngineStore((s) => s.activeShot)
   const rows = useEngineStore((s) => s.timelineRows)
   const selectedRow = rows.find((row) => row.targetNodeId === selectedTargetNodeId) ?? rows[0] ?? null
-  const selectedLayer = selectedRow?.layers.find((layer) => layer.id === selectedLayerId) ?? null
+  const selectedRowLayers = selectedRow?.tracks.flatMap((track) => track.layers) ?? []
+  const selectedLayer = selectedRowLayers.find((layer) => layer.id === selectedLayerId) ?? null
   const presets = selectedRow ? engine.getMotionPresets(selectedRow.targetKind) : []
+  const selectedPreset = selectedLayer
+    ? presets.find((preset) => preset.id === selectedLayer.presetId) ?? null
+    : null
+  const parameterControls = selectedLayer
+    ? buildParameterControls(selectedLayer.parameters, selectedPreset)
+    : []
 
   return (
     <div className="panel" id="animate-panel">
@@ -38,19 +58,23 @@ export function AnimatePanel({
       </div>
 
       <div className="target-picker">
-        {rows.map((row) => (
-          <button
-            key={row.id}
-            className={`target-pill ${selectedRow?.targetNodeId === row.targetNodeId ? 'active' : ''}`}
-            onClick={() => {
-              onSelectTarget(row.targetNodeId)
-              onSelectLayer(row.layers[0]?.id ?? null)
-            }}
-          >
-            <span className="target-pill-kind">{row.category}</span>
-            <strong>{row.name}</strong>
-          </button>
-        ))}
+        {rows.map((row) => {
+          const rowLayers = row.tracks.flatMap((track) => track.layers)
+
+          return (
+            <button
+              key={row.id}
+              className={`target-pill ${selectedRow?.targetNodeId === row.targetNodeId ? 'active' : ''}`}
+              onClick={() => {
+                onSelectTarget(row.targetNodeId)
+                onSelectLayer(rowLayers[0]?.id ?? null)
+              }}
+            >
+              <span className="target-pill-kind">{row.category}</span>
+              <strong>{row.name}</strong>
+            </button>
+          )
+        })}
       </div>
 
       <div className="panel-section">
@@ -68,7 +92,17 @@ export function AnimatePanel({
                 }}
               >
                 <strong>{preset.name}</strong>
-                <span>{preset.durationSeconds}s</span>
+                <div className="preset-card-meta">
+                  <span>{preset.durationSeconds}s</span>
+                  <span>{formatEasing(preset.defaultEasing)}</span>
+                </div>
+                <div className="preset-feature-list">
+                  {preset.features.map((feature) => (
+                    <span key={feature} className="preset-feature-chip">
+                      {humanizeFeature(feature)}
+                    </span>
+                  ))}
+                </div>
               </button>
             ))}
           </div>
@@ -109,18 +143,35 @@ export function AnimatePanel({
                 />
               </label>
             </div>
-            <label className="field">
-              <span>Strength</span>
-              <input
-                type="range"
-                min="0"
-                max="2"
-                step="0.05"
-                value={selectedLayer.strength}
-                onChange={(event) => updateNumber(engine, selectedLayer.id, 'strength', event)}
-              />
-              <strong>{selectedLayer.strength.toFixed(2)}</strong>
-            </label>
+            <div className="field-grid">
+              <label className="field">
+                <span>Strength</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.05"
+                  value={selectedLayer.strength}
+                  onChange={(event) => updateNumber(engine, selectedLayer.id, 'strength', event)}
+                />
+                <strong>{selectedLayer.strength.toFixed(2)}</strong>
+              </label>
+              <label className="field">
+                <span>Easing</span>
+                <select
+                  value={selectedLayer.easing}
+                  onChange={(event) => {
+                    engine.updateMotionLayer(selectedLayer.id, { easing: event.target.value as MotionEasing })
+                  }}
+                >
+                  {EASING_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <label className="field checkbox-field">
               <input
                 type="checkbox"
@@ -130,15 +181,15 @@ export function AnimatePanel({
               <span>Enabled</span>
             </label>
             <div className="field-list">
-              {Object.entries(selectedLayer.parameters).map(([key, value]) => (
+              {parameterControls.map((control) => (
                 <ParameterField
-                  key={key}
-                  name={key}
-                  value={value}
+                  key={control.key}
+                  control={control}
+                  value={selectedLayer.parameters[control.key]}
                   onChange={(nextValue) => {
                     engine.updateMotionLayer(selectedLayer.id, {
                       parameters: {
-                        [key]: nextValue,
+                        [control.key]: nextValue,
                       } satisfies MotionLayerParameters,
                     })
                   }}
@@ -165,55 +216,64 @@ export function AnimatePanel({
 
 function ParameterField(
   props: {
-    name: string
-    value: string | number | boolean
+    control: MotionParameterControl
+    value: string | number | boolean | undefined
     onChange: (value: string | number | boolean) => void
   },
 ) {
-  const { name, value, onChange } = props
+  const { control, value, onChange } = props
 
-  if (typeof value === 'boolean') {
-    return (
-      <label className="field checkbox-field">
-        <input type="checkbox" checked={value} onChange={(event) => onChange(event.target.checked)} />
-        <span>{humanize(name)}</span>
-      </label>
-    )
+  switch (control.kind) {
+    case 'boolean':
+      return (
+        <label className="field checkbox-field">
+          <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />
+          <span>{control.label}</span>
+        </label>
+      )
+    case 'select':
+      return (
+        <label className="field">
+          <span>{control.label}</span>
+          <select value={typeof value === 'string' ? value : ''} onChange={(event) => onChange(event.target.value)}>
+            {control.options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )
+    case 'text':
+      return (
+        <label className="field">
+          <span>{control.label}</span>
+          <input
+            type="text"
+            value={typeof value === 'string' ? value : ''}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        </label>
+      )
+    case 'number':
+      return (
+        <label className="field">
+          <span>{control.label}</span>
+          <input
+            type="number"
+            min={control.min}
+            max={control.max}
+            step={control.step ?? 0.05}
+            value={typeof value === 'number' ? value : 0}
+            onChange={(event) => {
+              const nextValue = Number(event.target.value)
+              if (!Number.isFinite(nextValue)) return
+              onChange(nextValue)
+            }}
+          />
+        </label>
+      )
   }
-
-  if (name === 'axis' && typeof value === 'string') {
-    return (
-      <label className="field">
-        <span>{humanize(name)}</span>
-        <select value={value} onChange={(event) => onChange(event.target.value)}>
-          <option value="x">X</option>
-          <option value="y">Y</option>
-          <option value="z">Z</option>
-        </select>
-      </label>
-    )
-  }
-
-  return (
-    <label className="field">
-      <span>{humanize(name)}</span>
-      <input
-        type={typeof value === 'number' ? 'number' : 'text'}
-        step={typeof value === 'number' ? '0.05' : undefined}
-        value={String(value)}
-        onChange={(event) => {
-          if (typeof value === 'number') {
-            const nextValue = Number(event.target.value)
-            if (!Number.isFinite(nextValue)) return
-            onChange(nextValue)
-            return
-          }
-
-          onChange(event.target.value)
-        }}
-      />
-    </label>
-  )
 }
 
 function updateNumber(
@@ -225,6 +285,45 @@ function updateNumber(
   const value = Number(event.target.value)
   if (!Number.isFinite(value)) return
   engine.updateMotionLayer(layerId, { [key]: value })
+}
+
+function buildParameterControls(
+  parameters: MotionLayerParameters,
+  preset: MotionPreset | null,
+): MotionParameterControl[] {
+  const presetControls = preset?.parameterControls ?? []
+  const controlKeys = new Set(presetControls.map((control) => control.key))
+  const fallbackControls = Object.entries(parameters)
+    .filter(([key]) => !controlKeys.has(key))
+    .map(([key, value]): MotionParameterControl => inferParameterControl(key, value))
+
+  return [...presetControls, ...fallbackControls]
+}
+
+function inferParameterControl(
+  key: string,
+  value: string | number | boolean,
+): MotionParameterControl {
+  if (typeof value === 'boolean') {
+    return { key, label: humanize(key), kind: 'boolean' }
+  }
+
+  if (typeof value === 'number') {
+    return { key, label: humanize(key), kind: 'number', step: 0.05 }
+  }
+
+  return { key, label: humanize(key), kind: 'text' }
+}
+
+function formatEasing(easing: MotionEasing): string {
+  return EASING_OPTIONS.find((option) => option.value === easing)?.label ?? humanize(easing)
+}
+
+function humanizeFeature(feature: MotionFeatureTag): string {
+  return feature
+    .split('-')
+    .map((segment) => segment[0]?.toUpperCase() + segment.slice(1))
+    .join(' ')
 }
 
 function humanize(value: string): string {

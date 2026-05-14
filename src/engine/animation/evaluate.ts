@@ -2,6 +2,7 @@ import { cloneSceneDoc } from '../scene/snapshot'
 import { eulerToQuaternionTuple, quaternionToEulerXYZ } from '../scene/transformMath'
 import type { SceneDoc, Vec3 } from '../scene/types'
 import type {
+  MotionEasing,
   MotionLayer,
   MotionSequenceItem,
   ProjectDoc,
@@ -63,8 +64,12 @@ function accumulateRow(
   nodeDeltas: Map<string, NodeDelta>,
   lightDeltas: Map<string, LightDelta>,
 ): void {
-  for (const item of row.items) {
-    accumulateItem(item, timeSeconds, nodeDeltas, lightDeltas)
+  for (const track of row.tracks) {
+    if (!track.enabled) continue
+
+    for (const item of track.items) {
+      accumulateItem(item, timeSeconds, nodeDeltas, lightDeltas)
+    }
   }
 
   for (const child of row.children) {
@@ -102,37 +107,39 @@ function accumulateLayer(
 
   const localTime = timeSeconds - layer.startTimeSeconds
   const normalizedTime = clamp(localTime / layer.durationSeconds, 0, 1)
+  const easedTime = applyEasing(normalizedTime, layer.easing)
 
   switch (layer.presetId) {
     case 'object-float': {
       const axis = readAxis(layer.parameters.axis, 'y')
       const amplitude = readNumber(layer.parameters.amplitude, 0.35) * layer.strength
       const cycles = readNumber(layer.parameters.cycles, 1)
-      addTranslation(nodeDeltas, layer.targetNodeId, axis, amplitude * oscillate(normalizedTime, cycles))
+      addTranslation(nodeDeltas, layer.targetNodeId, axis, amplitude * oscillate(easedTime, cycles))
       return
     }
     case 'object-spin':
     case 'object-roundturn': {
       const axis = readAxis(layer.parameters.axis, 'y')
       const revolutions = readNumber(layer.parameters.revolutions, 1) * layer.strength
-      addRotation(nodeDeltas, layer.targetNodeId, axis, normalizedTime * revolutions * Math.PI * 2)
+      addRotation(nodeDeltas, layer.targetNodeId, axis, easedTime * revolutions * Math.PI * 2)
       return
     }
     case 'camera-dolly-in': {
       const distance = readNumber(layer.parameters.distance, 1.25) * layer.strength
-      addTranslation(nodeDeltas, layer.targetNodeId, 'z', -distance * normalizedTime)
+      const axis = readAxis(layer.parameters.axis, 'z')
+      addTranslation(nodeDeltas, layer.targetNodeId, axis, -distance * easedTime)
       return
     }
     case 'camera-orbit':
     case 'camera-roundturn': {
       const revolutions = readNumber(layer.parameters.revolutions, 1) * layer.strength
-      addRotation(nodeDeltas, layer.targetNodeId, 'y', normalizedTime * revolutions * Math.PI * 2)
+      addRotation(nodeDeltas, layer.targetNodeId, 'y', easedTime * revolutions * Math.PI * 2)
       return
     }
     case 'light-pulse': {
       const multiplier = readNumber(layer.parameters.intensityMultiplier, 0.45) * layer.strength
       const cycles = readNumber(layer.parameters.cycles, 1)
-      const intensity = 1.2 * multiplier * oscillate(normalizedTime, cycles)
+      const intensity = 1.2 * multiplier * oscillate(easedTime, cycles)
       addLightIntensity(lightDeltas, layer.targetNodeId, intensity)
       return
     }
@@ -140,9 +147,24 @@ function accumulateLayer(
       const axis = readAxis(layer.parameters.axis, 'x')
       const distance = readNumber(layer.parameters.distance, 1.2) * layer.strength
       const cycles = readNumber(layer.parameters.cycles, 1)
-      addTranslation(nodeDeltas, layer.targetNodeId, axis, distance * oscillate(normalizedTime, cycles))
+      addTranslation(nodeDeltas, layer.targetNodeId, axis, distance * oscillate(easedTime, cycles))
       return
     }
+  }
+}
+
+function applyEasing(normalizedTime: number, easing: MotionEasing): number {
+  switch (easing) {
+    case 'ease-in':
+      return round3(normalizedTime * normalizedTime)
+    case 'ease-out':
+      return round3(1 - ((1 - normalizedTime) * (1 - normalizedTime)))
+    case 'ease-in-out':
+      return normalizedTime < 0.5
+        ? round3(2 * normalizedTime * normalizedTime)
+        : round3(1 - (Math.pow(-2 * normalizedTime + 2, 2) / 2))
+    case 'linear':
+      return normalizedTime
   }
 }
 

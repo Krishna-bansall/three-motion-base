@@ -11,7 +11,13 @@ import {
   type CinematicSettings,
   type HDRIPreset,
 } from '../engine/viewSettings'
-import type { AnimationTargetKind, MotionLayerParameters, MotionPresetId, SequenceCategory } from '../engine/project/types'
+import type {
+  AnimationTargetKind,
+  MotionEasing,
+  MotionLayerParameters,
+  MotionPresetId,
+  SequenceCategory,
+} from '../engine/project/types'
 
 export interface EntityInfo {
   nodeId: string
@@ -56,7 +62,16 @@ export interface TimelineLayerInfo {
   startTimeSeconds: number
   durationSeconds: number
   strength: number
+  easing: MotionEasing
   parameters: MotionLayerParameters
+}
+
+export interface TimelineTrackInfo {
+  id: string
+  name: string
+  enabled: boolean
+  collapsed: boolean
+  layers: TimelineLayerInfo[]
 }
 
 export interface TimelineRowInfo {
@@ -65,7 +80,7 @@ export interface TimelineRowInfo {
   targetNodeId: string
   targetKind: AnimationTargetKind
   category: SequenceCategory
-  layers: TimelineLayerInfo[]
+  tracks: TimelineTrackInfo[]
 }
 
 export interface ActiveShotInfo {

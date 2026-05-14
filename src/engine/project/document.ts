@@ -10,6 +10,7 @@ import type {
   ProjectDoc,
   ProjectLook,
   SequenceCategory,
+  SequenceTrack,
   SequenceRow,
   StudioEnvironment,
   ShotDoc,
@@ -70,12 +71,25 @@ const LOOK_PRESETS: Record<LookPresetId, ProjectLook> = {
   },
 }
 
+const AXIS_OPTIONS = [
+  { value: 'x', label: 'X' },
+  { value: 'y', label: 'Y' },
+  { value: 'z', label: 'Z' },
+]
+
 const MOTION_PRESETS: Record<MotionPresetId, MotionPreset> = {
   'object-float': {
     id: 'object-float',
     targetKind: 'object',
     name: 'Float',
     durationSeconds: 3,
+    defaultEasing: 'linear',
+    features: ['translate', 'oscillate'],
+    parameterControls: [
+      { key: 'amplitude', label: 'Amplitude', kind: 'number', min: 0, max: 2, step: 0.05 },
+      { key: 'cycles', label: 'Cycles', kind: 'number', min: 0.25, max: 6, step: 0.25 },
+      { key: 'axis', label: 'Axis', kind: 'select', options: AXIS_OPTIONS },
+    ],
     parameters: {
       amplitude: 0.35,
       cycles: 1,
@@ -87,6 +101,12 @@ const MOTION_PRESETS: Record<MotionPresetId, MotionPreset> = {
     targetKind: 'object',
     name: 'Spin',
     durationSeconds: 3,
+    defaultEasing: 'linear',
+    features: ['rotate'],
+    parameterControls: [
+      { key: 'revolutions', label: 'Revolutions', kind: 'number', min: 0.25, max: 6, step: 0.25 },
+      { key: 'axis', label: 'Axis', kind: 'select', options: AXIS_OPTIONS },
+    ],
     parameters: {
       revolutions: 1,
       axis: 'y',
@@ -97,6 +117,12 @@ const MOTION_PRESETS: Record<MotionPresetId, MotionPreset> = {
     targetKind: 'object',
     name: 'Roundturn',
     durationSeconds: 4,
+    defaultEasing: 'linear',
+    features: ['rotate', 'hero-turn'],
+    parameterControls: [
+      { key: 'revolutions', label: 'Revolutions', kind: 'number', min: 0.25, max: 4, step: 0.25 },
+      { key: 'axis', label: 'Axis', kind: 'select', options: AXIS_OPTIONS },
+    ],
     parameters: {
       revolutions: 1,
       axis: 'y',
@@ -107,6 +133,12 @@ const MOTION_PRESETS: Record<MotionPresetId, MotionPreset> = {
     targetKind: 'camera',
     name: 'Dolly In',
     durationSeconds: 4,
+    defaultEasing: 'ease-out',
+    features: ['translate', 'camera-move'],
+    parameterControls: [
+      { key: 'distance', label: 'Distance', kind: 'number', min: 0.1, max: 8, step: 0.05 },
+      { key: 'axis', label: 'Axis', kind: 'select', options: AXIS_OPTIONS },
+    ],
     parameters: {
       distance: 1.25,
       axis: 'z',
@@ -117,6 +149,12 @@ const MOTION_PRESETS: Record<MotionPresetId, MotionPreset> = {
     targetKind: 'camera',
     name: 'Orbit',
     durationSeconds: 5,
+    defaultEasing: 'linear',
+    features: ['rotate', 'camera-move'],
+    parameterControls: [
+      { key: 'revolutions', label: 'Revolutions', kind: 'number', min: 0.25, max: 4, step: 0.25 },
+      { key: 'radiusScale', label: 'Radius Scale', kind: 'number', min: 0.25, max: 3, step: 0.05 },
+    ],
     parameters: {
       revolutions: 1,
       radiusScale: 1,
@@ -127,6 +165,12 @@ const MOTION_PRESETS: Record<MotionPresetId, MotionPreset> = {
     targetKind: 'camera',
     name: 'Roundturn',
     durationSeconds: 5,
+    defaultEasing: 'linear',
+    features: ['rotate', 'camera-move', 'hero-turn'],
+    parameterControls: [
+      { key: 'revolutions', label: 'Revolutions', kind: 'number', min: 0.25, max: 4, step: 0.25 },
+      { key: 'radiusScale', label: 'Radius Scale', kind: 'number', min: 0.25, max: 3, step: 0.05 },
+    ],
     parameters: {
       revolutions: 1,
       radiusScale: 1,
@@ -137,6 +181,12 @@ const MOTION_PRESETS: Record<MotionPresetId, MotionPreset> = {
     targetKind: 'light',
     name: 'Pulse',
     durationSeconds: 3,
+    defaultEasing: 'linear',
+    features: ['light', 'oscillate'],
+    parameterControls: [
+      { key: 'intensityMultiplier', label: 'Intensity Multiplier', kind: 'number', min: 0, max: 2, step: 0.05 },
+      { key: 'cycles', label: 'Cycles', kind: 'number', min: 0.25, max: 6, step: 0.25 },
+    ],
     parameters: {
       intensityMultiplier: 0.45,
       cycles: 1,
@@ -147,6 +197,13 @@ const MOTION_PRESETS: Record<MotionPresetId, MotionPreset> = {
     targetKind: 'light',
     name: 'Sweep',
     durationSeconds: 4,
+    defaultEasing: 'ease-in-out',
+    features: ['translate', 'light', 'oscillate'],
+    parameterControls: [
+      { key: 'distance', label: 'Distance', kind: 'number', min: 0.1, max: 4, step: 0.05 },
+      { key: 'axis', label: 'Axis', kind: 'select', options: AXIS_OPTIONS },
+      { key: 'cycles', label: 'Cycles', kind: 'number', min: 0.25, max: 6, step: 0.25 },
+    ],
     parameters: {
       distance: 1.2,
       axis: 'x',
@@ -322,6 +379,7 @@ export function addLayerToActiveShot(
   params: {
     targetNodeId: string
     presetId: MotionPresetId
+    trackId?: string
   },
 ): ProjectDoc {
   const updated = cloneProjectDoc(project)
@@ -341,6 +399,14 @@ export function addLayerToActiveShot(
     throw new Error(`Preset ${params.presetId} does not match target kind ${row.targetKind}`)
   }
 
+  const track = params.trackId
+    ? row.tracks.find((t) => t.id === params.trackId)
+    : row.tracks[0]
+
+  if (!track) {
+    throw new Error(`Unknown track: ${params.trackId}`)
+  }
+
   const nextLayer: MotionLayer = {
     id: `layer-${countLayers(activeShot.sequence.rows) + 1}`,
     kind: 'layer',
@@ -353,18 +419,19 @@ export function addLayerToActiveShot(
     startTimeSeconds: 0,
     durationSeconds: preset.durationSeconds,
     strength: 1,
+    easing: preset.defaultEasing,
     parameters: structuredClone(preset.parameters),
     curveOverrides: [],
   }
 
-  row.items.push(nextLayer)
+  track.items.push(nextLayer)
   return updated
 }
 
 export function updateActiveShotLayer(
   project: ProjectDoc,
   layerId: string,
-  patch: Partial<Pick<MotionLayer, 'startTimeSeconds' | 'durationSeconds' | 'strength' | 'enabled' | 'name'>>
+  patch: Partial<Pick<MotionLayer, 'startTimeSeconds' | 'durationSeconds' | 'strength' | 'enabled' | 'name' | 'easing'>>
     & { parameters?: MotionLayer['parameters'] },
 ): ProjectDoc {
   const updated = cloneProjectDoc(project)
@@ -379,6 +446,7 @@ export function updateActiveShotLayer(
   if (patch.durationSeconds !== undefined) layer.durationSeconds = patch.durationSeconds
   if (patch.strength !== undefined) layer.strength = patch.strength
   if (patch.enabled !== undefined) layer.enabled = patch.enabled
+  if (patch.easing !== undefined) layer.easing = patch.easing
   if (patch.parameters) {
     layer.parameters = {
       ...layer.parameters,
@@ -394,14 +462,95 @@ export function removeLayerFromActiveShot(project: ProjectDoc, layerId: string):
   const activeShot = updated.shots[updated.activeShotId]
 
   for (const row of activeShot.sequence.rows) {
-    const index = row.items.findIndex((item) => item.kind === 'layer' && item.id === layerId)
-    if (index >= 0) {
-      row.items.splice(index, 1)
-      return updated
+    for (const track of row.tracks) {
+      const index = track.items.findIndex((item) => item.kind === 'layer' && item.id === layerId)
+      if (index >= 0) {
+        track.items.splice(index, 1)
+        return updated
+      }
     }
   }
 
   throw new Error(`Unknown active shot layer: ${layerId}`)
+}
+
+export function addTrackToActiveShot(
+  project: ProjectDoc,
+  params: {
+    targetNodeId: string
+    name?: string
+  },
+): ProjectDoc {
+  const updated = cloneProjectDoc(project)
+  const activeShot = updated.shots[updated.activeShotId]
+  const row = activeShot.sequence.rows.find((entry) => entry.targetNodeId === params.targetNodeId)
+
+  if (!row) {
+    throw new Error(`Unknown timeline target: ${params.targetNodeId}`)
+  }
+
+  const trackNumber = row.tracks.length + 1
+  const track: SequenceTrack = {
+    id: `${row.id}-track-${trackNumber}`,
+    name: params.name ?? `Track ${trackNumber}`,
+    enabled: true,
+    collapsed: false,
+    items: [],
+  }
+
+  row.tracks.push(track)
+  return updated
+}
+
+export function removeTrackFromActiveShot(
+  project: ProjectDoc,
+  params: {
+    targetNodeId: string
+    trackId: string
+  },
+): ProjectDoc {
+  const updated = cloneProjectDoc(project)
+  const activeShot = updated.shots[updated.activeShotId]
+  const row = activeShot.sequence.rows.find((entry) => entry.targetNodeId === params.targetNodeId)
+
+  if (!row) {
+    throw new Error(`Unknown timeline target: ${params.targetNodeId}`)
+  }
+
+  if (row.tracks.length <= 1) {
+    throw new Error('Cannot remove the last track from a row')
+  }
+
+  const index = row.tracks.findIndex((t) => t.id === params.trackId)
+  if (index < 0) {
+    throw new Error(`Unknown track: ${params.trackId}`)
+  }
+
+  row.tracks.splice(index, 1)
+  return updated
+}
+
+export function updateTrackInActiveShot(
+  project: ProjectDoc,
+  params: {
+    trackId: string
+    name?: string
+    enabled?: boolean
+    collapsed?: boolean
+  },
+): ProjectDoc {
+  const updated = cloneProjectDoc(project)
+  const track = findActiveShotTrack(updated, params.trackId)
+
+  if (!track) {
+    throw new Error(`Unknown track: ${params.trackId}`)
+  }
+
+  if (params.name !== undefined) track.name = params.name
+  if (params.enabled !== undefined) track.enabled = params.enabled
+  if (params.collapsed !== undefined) track.collapsed = params.collapsed
+
+  return updated
 }
 
 export function applyStudioPreset(project: ProjectDoc, presetId: StudioPresetId): ProjectDoc {
@@ -481,22 +630,47 @@ function createSequenceRow(
     targetNodeId,
     targetKind,
     category,
-    items: [],
+    tracks: [createDefaultTrack(`${id}-track-1`)],
     children: [],
   }
 }
 
+function createDefaultTrack(id: string): SequenceTrack {
+  return {
+    id,
+    name: 'Track 1',
+    enabled: true,
+    collapsed: false,
+    items: [],
+  }
+}
+
 function countLayers(rows: SequenceRow[]): number {
-  return rows.reduce((total, row) => total + row.items.length, 0)
+  return rows.reduce((total, row) => total + row.tracks.reduce((trackTotal, track) => trackTotal + track.items.length, 0), 0)
 }
 
 function findActiveShotLayer(project: ProjectDoc, layerId: string): MotionLayer | null {
   const activeShot = project.shots[project.activeShotId]
 
   for (const row of activeShot.sequence.rows) {
-    const layer = row.items.find((item) => item.kind === 'layer' && item.id === layerId)
-    if (layer?.kind === 'layer') {
-      return layer
+    for (const track of row.tracks) {
+      const layer = track.items.find((item) => item.kind === 'layer' && item.id === layerId)
+      if (layer?.kind === 'layer') {
+        return layer
+      }
+    }
+  }
+
+  return null
+}
+
+function findActiveShotTrack(project: ProjectDoc, trackId: string): SequenceTrack | null {
+  const activeShot = project.shots[project.activeShotId]
+
+  for (const row of activeShot.sequence.rows) {
+    const track = row.tracks.find((t) => t.id === trackId)
+    if (track) {
+      return track
     }
   }
 
