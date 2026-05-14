@@ -15,6 +15,21 @@ export type StudioPresetId = 'soft-box-plinth'
 export type StudioGeometryKind = 'floor' | 'backdrop' | 'plinth'
 export type StudioTransformEdit = 'position' | 'rotation' | 'scale'
 export type LookPresetId = 'studio-neutral' | 'warm-hero' | 'cool-contrast'
+export type AnimationTargetKind = 'object' | 'camera' | 'light'
+export type SequenceCategory = 'objects' | 'camera' | 'lights'
+export type MotionItemId = string
+export type MotionItemKind = 'layer' | 'group'
+export type MotionLayerBlendMode = 'additive'
+export type MotionAxis = 'x' | 'y' | 'z'
+export type MotionPresetId =
+  | 'object-float'
+  | 'object-spin'
+  | 'object-roundturn'
+  | 'camera-dolly-in'
+  | 'camera-orbit'
+  | 'camera-roundturn'
+  | 'light-pulse'
+  | 'light-sweep'
 
 export const CAMERA_KINDS = {
   perspective: 'perspective',
@@ -155,6 +170,57 @@ export interface AnimationSequence {
 
 export interface SequenceRow {
   id: string
+  name: string
   targetNodeId: NodeId
+  targetKind: AnimationTargetKind
+  category: SequenceCategory
+  items: MotionSequenceItem[]
   children: SequenceRow[]
+}
+
+export type MotionSequenceItem = MotionLayer | MotionGroup
+
+export interface MotionLayer {
+  id: MotionItemId
+  kind: 'layer'
+  name: string
+  targetNodeId: NodeId
+  targetKind: AnimationTargetKind
+  presetId: MotionPresetId
+  blendMode: MotionLayerBlendMode
+  enabled: boolean
+  startTimeSeconds: number
+  durationSeconds: number
+  strength: number
+  parameters: MotionLayerParameters
+  curveOverrides: MotionCurveOverride[]
+}
+
+export interface MotionGroup {
+  id: MotionItemId
+  kind: 'group'
+  name: string
+  enabled: boolean
+  startTimeSeconds: number
+  durationSeconds: number
+  strength: number
+  items: MotionSequenceItem[]
+}
+
+export type MotionLayerParameters = Record<string, number | string | boolean>
+
+export interface MotionCurveOverride {
+  propertyPath: string
+  points: Array<{
+    time: number
+    value: number
+  }>
+}
+
+export interface MotionPreset {
+  id: MotionPresetId
+  targetKind: AnimationTargetKind
+  name: string
+  durationSeconds: number
+  parameters: MotionLayerParameters
 }
