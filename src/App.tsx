@@ -1,12 +1,12 @@
 /**
  * App — Root layout with StartScreen → Viewer flow.
- * 
+ *
  * Creates a single EngineAPI instance and passes it to all children.
  * React never touches THREE objects — only calls EngineAPI methods.
- * 
+ *
  * Flow: StartScreen picks the model source → Viewer mounts → engine loads the model.
  */
-import { useMemo, useState, useCallback, useEffect } from 'react'
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { EngineAPI } from './engine/EngineAPI'
 import { useEngineStore } from './store/useEngineStore'
 import { StartScreen } from './ui/StartScreen'
@@ -19,8 +19,12 @@ import { ExportPanel } from './ui/panels/ExportPanel'
 import { FiltersPanel } from './ui/panels/FiltersPanel'
 import { AnimatePanel } from './ui/panels/AnimatePanel'
 import { TimelinePanel } from './ui/panels/TimelinePanel'
+import {
+  advanceTimelinePlayback,
+  clampTimelineTime,
+  getPlaybackStartTime,
+} from './ui/panels/timelinePlayback'
 
-/** Describes what the start screen selected */
 type ModelSource =
   | { type: 'sample' }
   | { type: 'file'; file: File }
@@ -36,12 +40,74 @@ function App() {
   const [timelineCategory, setTimelineCategory] = useState<TimelineCategory>('all')
   const [selectedTargetNodeId, setSelectedTargetNodeId] = useState<string | null>(null)
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null)
+  const [isTimelinePlaying, setIsTimelinePlaying] = useState(false)
+  const playbackFrameRef = useRef<number | null>(null)
+  const playbackStartedAtRef = useRef<number | null>(null)
+  const playbackOriginTimeRef = useRef(0)
+  const activeShot = useEngineStore((s) => s.activeShot)
   const timelineRows = useEngineStore((s) => s.timelineRows)
   const timelineTimeSeconds = useEngineStore((s) => s.timelineTimeSeconds)
+
+  const effectiveSelectedTargetNodeId = selectedTargetNodeId && timelineRows.some(
+    (row) => row.targetNodeId === selectedTargetNodeId,
+  )
+    ? selectedTargetNodeId
+    : (timelineRows[0]?.targetNodeId ?? null)
+
+  const effectiveSelectedLayerId = selectedLayerId && timelineRows.some(
+    (row) => row.layers.some((layer) => layer.id === selectedLayerId),
+  )
+    ? selectedLayerId
+    : null
+
+  const canPlayTimeline = editorMode === 'animate' && timelineRows.length > 0 && activeShot.durationSeconds > 0
+  const timelinePlaybackActive = isTimelinePlaying && canPlayTimeline
 
   const handleModelSelected = useCallback((source: ModelSource) => {
     setModelSource(source)
   }, [])
+
+  const seekTimeline = useCallback((timeSeconds: number) => {
+    engine.previewAnimation(clampTimelineTime(timeSeconds, activeShot.durationSeconds))
+  }, [activeShot.durationSeconds, engine])
+
+  const handleEditorModeChange = useCallback((nextMode: EditorMode) => {
+    if (nextMode === 'setup') {
+      setIsTimelinePlaying(false)
+      setSelectedLayerId(null)
+    }
+
+    setEditorMode(nextMode)
+  }, [])
+
+  const handleTimelineSeek = useCallback((timeSeconds: number) => {
+    if (timelinePlaybackActive) {
+      setIsTimelinePlaying(false)
+    }
+
+    seekTimeline(timeSeconds)
+  }, [seekTimeline, timelinePlaybackActive])
+
+  const handleToggleTimelinePlayback = useCallback(() => {
+    if (!canPlayTimeline) {
+      return
+    }
+
+    if (timelinePlaybackActive) {
+      setIsTimelinePlaying(false)
+      return
+    }
+
+    const startTime = getPlaybackStartTime(timelineTimeSeconds, activeShot.durationSeconds)
+    seekTimeline(startTime)
+    setIsTimelinePlaying(true)
+  }, [
+    activeShot.durationSeconds,
+    canPlayTimeline,
+    seekTimeline,
+    timelinePlaybackActive,
+    timelineTimeSeconds,
+  ])
 
   useEffect(() => {
     window.threeMotion = engine.getConsoleAPI()
@@ -53,36 +119,68 @@ function App() {
 
   useEffect(() => {
     if (editorMode === 'animate') {
-      if (!selectedTargetNodeId && timelineRows.length > 0) {
-        setSelectedTargetNodeId(timelineRows[0].targetNodeId)
-      }
-      engine.previewAnimation(timelineTimeSeconds)
+      seekTimeline(useEngineStore.getState().timelineTimeSeconds)
       return
     }
 
     engine.clearAnimationPreview()
-    setSelectedLayerId(null)
-  }, [editorMode, engine, selectedTargetNodeId, timelineRows, timelineTimeSeconds])
+  }, [editorMode, engine, seekTimeline])
 
   useEffect(() => {
-    if (selectedTargetNodeId && timelineRows.some((row) => row.targetNodeId === selectedTargetNodeId)) {
+    if (!timelinePlaybackActive) {
       return
     }
 
-    setSelectedTargetNodeId(timelineRows[0]?.targetNodeId ?? null)
-    setSelectedLayerId(null)
-  }, [selectedTargetNodeId, timelineRows])
+    playbackOriginTimeRef.current = clampTimelineTime(
+      useEngineStore.getState().timelineTimeSeconds,
+      activeShot.durationSeconds,
+    )
+    playbackStartedAtRef.current = null
+
+    const stepPlayback = (frameTime: number) => {
+      if (playbackStartedAtRef.current === null) {
+        playbackStartedAtRef.current = frameTime
+      }
+
+      const nextFrame = advanceTimelinePlayback({
+        startTimeSeconds: playbackOriginTimeRef.current,
+        elapsedSeconds: (frameTime - playbackStartedAtRef.current) / 1000,
+        durationSeconds: activeShot.durationSeconds,
+      })
+
+      engine.previewAnimation(nextFrame.timeSeconds)
+
+      if (nextFrame.completed) {
+        playbackFrameRef.current = null
+        playbackStartedAtRef.current = null
+        setIsTimelinePlaying(false)
+        return
+      }
+
+      playbackFrameRef.current = requestAnimationFrame(stepPlayback)
+    }
+
+    playbackFrameRef.current = requestAnimationFrame(stepPlayback)
+
+    return () => {
+      if (playbackFrameRef.current !== null) {
+        cancelAnimationFrame(playbackFrameRef.current)
+      }
+
+      playbackFrameRef.current = null
+      playbackStartedAtRef.current = null
+    }
+  }, [activeShot.durationSeconds, engine, timelinePlaybackActive])
 
   useEffect(() => {
-    if (!selectedLayerId) return
-
-    const layerExists = timelineRows.some((row) => row.layers.some((layer) => layer.id === selectedLayerId))
-    if (!layerExists) {
-      setSelectedLayerId(null)
+    const clampedTime = clampTimelineTime(timelineTimeSeconds, activeShot.durationSeconds)
+    if (clampedTime === timelineTimeSeconds) {
+      return
     }
-  }, [selectedLayerId, timelineRows])
 
-  // Show start screen until user makes a choice
+    seekTimeline(clampedTime)
+  }, [activeShot.durationSeconds, seekTimeline, timelineTimeSeconds])
+
   if (!modelSource) {
     return <StartScreen onModelSelected={handleModelSelected} />
   }
@@ -96,11 +194,13 @@ function App() {
         </main>
         {editorMode === 'animate' ? (
           <TimelinePanel
-            engine={engine}
             category={timelineCategory}
             onCategoryChange={setTimelineCategory}
-            selectedTargetNodeId={selectedTargetNodeId}
-            selectedLayerId={selectedLayerId}
+            isPlaying={timelinePlaybackActive}
+            onTogglePlayback={handleToggleTimelinePlayback}
+            onSeek={handleTimelineSeek}
+            selectedTargetNodeId={effectiveSelectedTargetNodeId}
+            selectedLayerId={effectiveSelectedLayerId}
             onSelectTarget={setSelectedTargetNodeId}
             onSelectLayer={setSelectedLayerId}
           />
@@ -116,13 +216,13 @@ function App() {
             <div className="mode-toggle" role="tablist" aria-label="Editor mode">
               <button
                 className={`mode-toggle-btn ${editorMode === 'setup' ? 'active' : ''}`}
-                onClick={() => setEditorMode('setup')}
+                onClick={() => handleEditorModeChange('setup')}
               >
                 Setup
               </button>
               <button
                 className={`mode-toggle-btn ${editorMode === 'animate' ? 'active' : ''}`}
-                onClick={() => setEditorMode('animate')}
+                onClick={() => handleEditorModeChange('animate')}
               >
                 Animate
               </button>
@@ -140,8 +240,8 @@ function App() {
           ) : (
             <AnimatePanel
               engine={engine}
-              selectedTargetNodeId={selectedTargetNodeId}
-              selectedLayerId={selectedLayerId}
+              selectedTargetNodeId={effectiveSelectedTargetNodeId}
+              selectedLayerId={effectiveSelectedLayerId}
               onSelectTarget={setSelectedTargetNodeId}
               onSelectLayer={setSelectedLayerId}
             />

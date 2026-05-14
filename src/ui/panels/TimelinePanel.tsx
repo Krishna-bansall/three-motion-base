@@ -1,12 +1,14 @@
-import type { EngineAPI } from '../../engine/EngineAPI'
 import { useEngineStore } from '../../store/useEngineStore'
+import { getTimelineScrubberStep } from './timelinePlayback'
 
 type TimelineCategory = 'all' | 'objects' | 'camera' | 'lights'
 
 interface TimelinePanelProps {
-  engine: EngineAPI
   category: TimelineCategory
   onCategoryChange: (category: TimelineCategory) => void
+  isPlaying: boolean
+  onTogglePlayback: () => void
+  onSeek: (timeSeconds: number) => void
   selectedTargetNodeId: string | null
   selectedLayerId: string | null
   onSelectTarget: (nodeId: string) => void
@@ -14,9 +16,11 @@ interface TimelinePanelProps {
 }
 
 export function TimelinePanel({
-  engine,
   category,
   onCategoryChange,
+  isPlaying,
+  onTogglePlayback,
+  onSeek,
   selectedTargetNodeId,
   selectedLayerId,
   onSelectTarget,
@@ -54,17 +58,27 @@ export function TimelinePanel({
             </button>
           ))}
         </div>
-        <label className="timeline-scrubber">
-          <span>{timeSeconds.toFixed(2)}s</span>
-          <input
-            type="range"
-            min="0"
-            max={activeShot.durationSeconds}
-            step="0.01"
-            value={timeSeconds}
-            onChange={(event) => engine.previewAnimation(Number(event.target.value))}
-          />
-        </label>
+        <div className="timeline-transport">
+          <button
+            className={`timeline-play-btn ${isPlaying ? 'active' : ''}`}
+            onClick={onTogglePlayback}
+            disabled={rows.length === 0}
+            aria-pressed={isPlaying}
+          >
+            {isPlaying ? 'Pause' : 'Play'}
+          </button>
+          <label className="timeline-scrubber">
+            <span>{timeSeconds.toFixed(2)} / {activeShot.durationSeconds.toFixed(2)}s</span>
+            <input
+              type="range"
+              min="0"
+              max={activeShot.durationSeconds}
+              step={getTimelineScrubberStep(activeShot.fps)}
+              value={timeSeconds}
+              onChange={(event) => onSeek(Number(event.target.value))}
+            />
+          </label>
+        </div>
       </div>
 
       <div className="timeline-grid">
