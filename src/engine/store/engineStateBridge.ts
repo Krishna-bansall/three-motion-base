@@ -68,6 +68,18 @@ export interface ConsoleStateParams {
   pathTracingReadiness: object
 }
 
+export function syncEngineState(
+  project: ProjectDoc,
+  scene: SceneDoc | null,
+  trackedNodeId: string | null,
+): void {
+  publishEntities(scene)
+  publishStudioSetupObjects(project)
+  publishProjectLook(project)
+  publishAnimationTimeline(project)
+  publishTrackedObjectTransform(scene, trackedNodeId)
+}
+
 export function readViewSettingsFromStore(): ViewSettings {
   const state = useEngineStore.getState()
   return cloneViewSettings({

@@ -66,6 +66,7 @@ import {
   publishTrackedObjectTransform,
   publishViewSettings,
   readViewSettingsFromStore,
+  syncEngineState,
   type RuntimeStateGraph,
 } from './store/engineStateBridge'
 import {
@@ -729,12 +730,8 @@ export class EngineAPI {
       await this.runtime.setViewSettings(readViewSettingsFromStore())
 
       publishHasModel(true)
-      publishProjectLook(this.currentProject)
-      publishStudioSetupObjects(this.currentProject)
-      publishAnimationTimeline(this.currentProject)
+      syncEngineState(this.currentProject, this.currentScene, this.getTrackedProductRootNodeId())
       publishTimelineTime(0)
-      publishEntities(this.currentScene)
-      publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
       this.initializeHistory()
     } finally {
       publishLoading(false)
@@ -854,12 +851,8 @@ export class EngineAPI {
       await this.runtime.buildFromCanonical(this.currentScene ?? createEmptySceneDoc())
       await this.runtime.setViewSettings(snapshot.viewSettings)
       publishViewSettings(snapshot.viewSettings)
-      publishProjectLook(this.currentProject)
-      publishStudioSetupObjects(this.currentProject)
-      publishAnimationTimeline(this.currentProject)
+      syncEngineState(this.currentProject, this.currentScene, this.getTrackedProductRootNodeId())
       publishTimelineTime(0)
-      publishEntities(this.currentScene)
-      publishTrackedObjectTransform(this.currentScene, this.getTrackedProductRootNodeId())
     } finally {
       this.history.endApplyingHistory()
     }
