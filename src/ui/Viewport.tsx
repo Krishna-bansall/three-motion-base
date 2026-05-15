@@ -7,6 +7,7 @@ import { useRef, useEffect, useState, useCallback } from 'react'
 import { useEngineStore } from '../store/useEngineStore'
 import type { EngineAPI } from '../engine/EngineAPI'
 import type { TransformGizmoMode } from '../engine/runtime/types'
+import { TransformWidget } from './TransformWidget'
 
 type ModelSource =
   | { type: 'sample' }
@@ -134,15 +135,18 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
 
       switch (key) {
         case 'q':
+        case 'escape':
           setTransformMode(null)
           break
+        case 'g':
         case 'w':
           setTransformMode('translate')
           break
+        case 'r':
         case 'e':
           setTransformMode('rotate')
           break
-        case 'r':
+        case 's':
           setTransformMode('scale')
           break
         default:
@@ -216,7 +220,7 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
           type="button"
         >
           Move
-          <span>W</span>
+          <span>G</span>
         </button>
         <button
           className={`viewport-tool-btn ${transformMode === 'rotate' ? 'active' : ''}`}
@@ -224,7 +228,7 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
           type="button"
         >
           Rotate
-          <span>E</span>
+          <span>R</span>
         </button>
         <button
           className={`viewport-tool-btn ${transformMode === 'scale' ? 'active' : ''}`}
@@ -232,7 +236,7 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
           type="button"
         >
           Scale
-          <span>R</span>
+          <span>S</span>
         </button>
       </div>
       {toast && (
@@ -241,6 +245,8 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
           <span>{toast.label}</span>
         </div>
       )}
+      {/* TODO: re-enable TransformWidget when ready */}
+      {/* <TransformWidget engine={engine} /> */}
       {isLoading && (
         <div className="viewport-loader">
           <div className="loader-spinner" />

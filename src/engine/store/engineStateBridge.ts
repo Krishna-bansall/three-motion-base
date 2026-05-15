@@ -104,7 +104,8 @@ export function publishLoading(isLoading: boolean): void {
 }
 
 export function publishTrackedObjectTransform(scene: SceneDoc | null, nodeId?: string | null): void {
-  useEngineStore.getState().setTrackedObjectTransform(buildTrackedObjectTransform(scene, nodeId))
+  const trackedNodeId = nodeId ?? scene?.roots[0] ?? null
+  useEngineStore.getState().setTrackedObjectTransform(buildTrackedObjectTransform(scene, trackedNodeId), trackedNodeId)
 }
 
 export function publishStudioSetupObjects(project: ProjectDoc): void {

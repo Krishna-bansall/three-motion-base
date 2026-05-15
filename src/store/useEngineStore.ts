@@ -102,6 +102,7 @@ export interface EngineState {
   canUndo: boolean
   canRedo: boolean
   trackedObjectTransform: TrackedObjectTransform | null
+  trackedObjectNodeId: string | null
   studioSetupObjects: StudioSetupObjectInfo[]
   selectedStudioObjectNodeId: string | null
   activeLookId: string
@@ -126,7 +127,7 @@ export interface EngineState {
   setEntities: (e: EntityInfo[]) => void
   setHasModel: (v: boolean) => void
   setHistoryAvailability: (history: { canUndo: boolean; canRedo: boolean }) => void
-  setTrackedObjectTransform: (transform: TrackedObjectTransform | null) => void
+  setTrackedObjectTransform: (transform: TrackedObjectTransform | null, nodeId?: string | null) => void
   setStudioSetupObjects: (objects: StudioSetupObjectInfo[]) => void
   setSelectedStudioObjectNodeId: (nodeId: string | null) => void
   setActiveLookId: (lookId: string) => void
@@ -148,6 +149,7 @@ export const useEngineStore = create<EngineState>((set) => ({
   canUndo: false,
   canRedo: false,
   trackedObjectTransform: null,
+  trackedObjectNodeId: null,
   studioSetupObjects: [],
   selectedStudioObjectNodeId: null,
   activeLookId: 'look-studio-neutral',
@@ -167,7 +169,7 @@ export const useEngineStore = create<EngineState>((set) => ({
   setEntities: (e) => set({ entities: e }),
   setHasModel: (v) => set({ hasModel: v }),
   setHistoryAvailability: ({ canUndo, canRedo }) => set({ canUndo, canRedo }),
-  setTrackedObjectTransform: (transform) => set({ trackedObjectTransform: transform }),
+  setTrackedObjectTransform: (transform, nodeId) => set({ trackedObjectTransform: transform, trackedObjectNodeId: nodeId ?? null }),
   setStudioSetupObjects: (objects) => set({ studioSetupObjects: objects }),
   setSelectedStudioObjectNodeId: (nodeId) => set({ selectedStudioObjectNodeId: nodeId }),
   setActiveLookId: (lookId) => set({ activeLookId: lookId }),

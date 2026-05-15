@@ -139,6 +139,13 @@ export class ThreeRenderer {
     const elapsed = this.timer.getElapsed()
 
     this.turntable?.update(delta)
+
+    // Ensure the gizmo helper stays in sync with the attached object
+    // (TransformControls updates the helper during the render loop)
+    if (this.transformControls.enabled) {
+      this.transformControls.update()
+    }
+
     this.postProcessing.render(elapsed)
   }
 
@@ -187,15 +194,29 @@ export class ThreeRenderer {
   }
 
   setTransformMode(mode: TransformGizmoMode | null): void {
-    this.transformMode = mode
-    this.transformControls.enabled = mode !== null
-    this.transformControlsHelper.visible = mode !== null
+    if (this.transformMode === mode) return
+
+    const previousMode = this.transformMode
 
     if (mode) {
       this.transformControls.setMode(mode)
+      this.transformControls.enabled = true
+      this.transformControlsHelper.visible = true
+      this.transformMode = mode
+    } else {
+      this.transformControls.enabled = false
+      this.transformControlsHelper.visible = false
+      this.transformMode = null
     }
 
     this.syncTurntableState()
+
+    // If switching between active gizmo modes, pulse the helper
+    // visibility to ensure clean axis highlight state
+    if (previousMode !== null && mode !== null) {
+      this.transformControlsHelper.visible = false
+      this.transformControlsHelper.visible = true
+    }
   }
 
   getTransformMode(): TransformGizmoMode | null {
@@ -203,7 +224,27 @@ export class ThreeRenderer {
   }
 
   setInteractionTarget(target: THREE.Object3D): void {
+    if (!target) return
+
+    const wasEnabled = this.transformControls.enabled
+    const currentMode = this.transformMode
+
+    // Disable and detach before switching targets
+    // to avoid leaving stale state on the old object
+    if (wasEnabled) {
+      this.transformControls.enabled = false
+      this.transformControlsHelper.visible = false
+    }
+    this.transformControls.detach()
     this.transformControls.attach(target)
+
+    // Restore the previous gizmo state on the new target
+    if (wasEnabled && currentMode) {
+      this.transformControls.setMode(currentMode)
+      this.transformControls.enabled = true
+      this.transformControlsHelper.visible = true
+    }
+
     this.turntable?.setTarget(target)
   }
 
