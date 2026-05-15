@@ -1,6 +1,7 @@
 export type NodeId = string
 export type MeshId = string
 export type MaterialId = string
+export type AssetNodeId = NodeId
 
 export type Vec3 = [number, number, number]
 export type Quat = [number, number, number, number]
@@ -18,6 +19,35 @@ export interface SceneDoc {
     colorSpace: 'linear-srgb'
   }
 }
+
+type DeepReadonly<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends readonly (infer U)[]
+    ? ReadonlyArray<DeepReadonly<U>>
+    : T extends object
+      ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+      : T
+
+/**
+ * Imported or bundled graph-shaped 3D content.
+ *
+ * Asset graphs are reusable source content. Project-owned placement,
+ * visibility, transform, and material edits belong to mount overrides in
+ * ProjectDoc/RenderGraph assembly, not to this graph.
+ */
+export type AssetGraphDoc = DeepReadonly<SceneDoc>
+
+/**
+ * Renderer-facing canonical graph assembled from ProjectDoc plus mounted
+ * AssetGraphDoc content.
+ */
+export type RenderGraphDoc = SceneDoc
+
+/**
+ * Animation-evaluated transient graph state. It is derived from a
+ * RenderGraphDoc for preview/playback and is not durable authoring state.
+ */
+export type EvaluatedRenderState = SceneDoc
 
 export interface SceneNode {
   id: NodeId
@@ -63,6 +93,12 @@ export interface MaterialDef {
   metalness: number
   envMapIntensity: number
   extras?: Record<string, unknown>
+}
+
+export interface ImportedLightCandidate {
+  assetNodeId: AssetNodeId
+  name: string
+  light: LightComponent
 }
 
 export const DEFAULT_SCENE_METADATA: SceneDoc['metadata'] = {

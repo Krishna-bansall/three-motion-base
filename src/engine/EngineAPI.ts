@@ -8,9 +8,10 @@ import { loadGLTFFromFile, loadGLTFFromFiles, loadGLTFFromURL, type LoadedModel 
 import { patchMaterial, setNodeTRS } from './scene/mutations'
 import { cloneSceneDoc, createEmptySceneDoc } from './scene/snapshot'
 import { diffSceneDocs, isSceneDeltaEmpty } from './scene/diff'
-import type { NodeId, Quat, SceneDoc, SceneNode } from './scene/types'
+import type { AssetGraphDoc, EvaluatedRenderState, NodeId, Quat, RenderGraphDoc, SceneDoc } from './scene/types'
 import { eulerToQuaternionTuple, quaternionToEulerXYZ } from './scene/transformMath'
 import { evaluateActiveShot } from './animation/evaluate'
+import { renderGraphAssembler } from './renderGraph/RenderGraphAssembler'
 import type {
   EnvironmentPreview,
   HDRIPreset,
@@ -44,8 +45,8 @@ import type {
   MotionLayer,
   MotionPreset,
   MotionPresetId,
+  ProductSlotId,
   ProjectDoc,
-  StudioGeometryKind,
   StudioPresetId,
   TrackId,
 } from './project/types'
@@ -80,10 +81,10 @@ export interface ThreeMotionConsoleAPI {
   redo: () => Promise<boolean>
   state: () => object
   scene: () => object
-  canonical: () => SceneDoc | null
+  canonical: () => RenderGraphDoc | null
   ecs: () => RuntimeStateGraph
   printState: () => object
-  printCanonical: () => SceneDoc | null
+  printCanonical: () => RenderGraphDoc | null
   printEcsGraph: () => RuntimeStateGraph
   setTransformMode: (mode: TransformGizmoMode | null) => void
 }
@@ -96,10 +97,10 @@ declare global {
 export class EngineAPI {
   private readonly runtime: RuntimeAdapter
   private currentProject: ProjectDoc = createDefaultProject()
-  private currentScene: SceneDoc | null = null
-  private currentProductScene: SceneDoc | null = null
-  private currentPreviewScene: SceneDoc | null = null
-  private currentAnimationPreviewScene: SceneDoc | null = null
+  private currentScene: RenderGraphDoc | null = null
+  private currentProductScene: AssetGraphDoc | null = null
+  private currentPreviewScene: RenderGraphDoc | null = null
+  private currentAnimationPreviewScene: EvaluatedRenderState | null = null
   private currentAssets: LoadedModel['runtimeAssets'] | null = null
   private readonly history = new EngineHistory()
   private currentTimelineTimeSeconds = 0
@@ -249,7 +250,7 @@ export class EngineAPI {
 
   async applyStudioPreset(presetId: StudioPresetId): Promise<void> {
     const nextProject = applyProjectStudioPreset(this.currentProject, presetId)
-    const nextScene = this.composeCanonicalProjectScene(nextProject, this.currentProductScene)
+    const nextScene = this.assembleRenderGraph(nextProject)
     const previous = this.currentScene ? cloneSceneDoc(this.currentScene) : createEmptySceneDoc()
 
     this.currentProject = nextProject
@@ -613,7 +614,7 @@ export class EngineAPI {
     return buildSceneSnapshot(Boolean(this.currentScene), this.getTransformGizmoMode())
   }
 
-  getCanonicalSceneSnapshot(): SceneDoc | null {
+  getCanonicalSceneSnapshot(): RenderGraphDoc | null {
     return this.currentScene ? cloneSceneDoc(this.currentScene) : null
   }
 
@@ -712,7 +713,7 @@ export class EngineAPI {
         uri: model.source.reference.uri,
         rootNodeId: model.source.rootNodeId,
       })
-      const nextScene = this.composeCanonicalProjectScene(nextProject, model.canonicalScene)
+      const nextScene = this.assembleRenderGraph(nextProject, model.canonicalScene)
       const nextAssets = {
         ...model.runtimeAssets,
         canonicalScene: cloneSceneDoc(nextScene),
@@ -740,108 +741,13 @@ export class EngineAPI {
     }
   }
 
-  private composeCanonicalProjectScene(project: ProjectDoc, importedScene: SceneDoc | null): SceneDoc {
-    const scene = createEmptySceneDoc()
-    const primarySlotId = project.studioScene.primaryProductSlotId
-    const primarySlot = project.studioScene.productSlots[primarySlotId]
-    const studioRootId: NodeId = 'node-studio-root'
-
-    scene.roots.push(studioRootId)
-    scene.nodes[studioRootId] = createProjectNode({
-      id: studioRootId,
-      parentId: null,
-      name: project.studioScene.name,
-      children: [
-        primarySlot.nodeId,
-        project.studioScene.renderCameraNodeId,
-        ...Object.values(project.studioScene.lights).map((light) => light.nodeId),
-        ...Object.values(project.studioScene.studioGeometry).map((object) => object.nodeId),
-      ],
-    })
-    scene.nodes[primarySlot.nodeId] = createProjectNode({
-      id: primarySlot.nodeId,
-      parentId: studioRootId,
-      name: primarySlot.name,
-      children: importedScene ? [...importedScene.roots] : [],
-    })
-    scene.nodes[project.studioScene.renderCameraNodeId] = createProjectNode({
-      id: project.studioScene.renderCameraNodeId,
-      parentId: studioRootId,
-      name: 'Render Camera',
-      children: [],
-      t: [0, 0.8, 4],
-      camera: project.studioScene.cameras['camera-render']
-        ? {
-            kind: project.studioScene.cameras['camera-render'].kind,
-            fovDegrees: project.studioScene.cameras['camera-render'].fovDegrees,
-            near: project.studioScene.cameras['camera-render'].near,
-            far: project.studioScene.cameras['camera-render'].far,
-          }
-        : undefined,
-    })
-
-    for (const light of Object.values(project.studioScene.lights)) {
-      scene.nodes[light.nodeId] = createProjectNode({
-        id: light.nodeId,
-        parentId: studioRootId,
-        name: light.name,
-        children: [],
-        t: getStudioLightTransform(light.id),
-        light: {
-          kind: light.kind,
-          intensity: light.intensity,
-          color: [...light.color],
-        },
-      })
-    }
-
-    for (const object of Object.values(project.studioScene.studioGeometry)) {
-      const material = Object.values(project.studioScene.materials)[0]
-      scene.nodes[object.nodeId] = createProjectNode({
-        id: object.nodeId,
-        parentId: studioRootId,
-        name: object.name,
-        children: [],
-        visible: object.visible,
-        t: getStudioGeometryTransform(object.kind),
-        meshId: `mesh-${object.id}`,
-        materialId: material?.materialId,
-      })
-      scene.meshes[`mesh-${object.id}`] = {
-        source: {
-          uri: `builtin:studio/${object.kind}`,
-        },
-      }
-    }
-
-    for (const material of Object.values(project.studioScene.materials)) {
-      scene.materials[material.materialId] = {
-        baseColor: [0.86, 0.86, 0.82],
-        roughness: 0.78,
-        metalness: 0.02,
-        envMapIntensity: project.studioScene.environment.intensity,
-      }
-    }
-
+  private assembleRenderGraph(project: ProjectDoc, importedScene: AssetGraphDoc | null = this.currentProductScene): RenderGraphDoc {
+    const mountedAssets = new Map<ProductSlotId, AssetGraphDoc>()
     if (importedScene) {
-      for (const [nodeId, node] of Object.entries(importedScene.nodes)) {
-        scene.nodes[nodeId] = {
-          ...structuredClone(node),
-          parentId: importedScene.roots.includes(nodeId) ? primarySlot.nodeId : node.parentId,
-        }
-      }
-
-      scene.meshes = {
-        ...scene.meshes,
-        ...structuredClone(importedScene.meshes),
-      }
-      scene.materials = {
-        ...scene.materials,
-        ...structuredClone(importedScene.materials),
-      }
+      mountedAssets.set(project.studioScene.primaryProductSlotId, importedScene)
     }
 
-    return scene
+    return renderGraphAssembler.assemble(project, mountedAssets)
   }
 
   private applySceneMutation(mutator: (scene: SceneDoc) => void): void {
@@ -1008,57 +914,5 @@ export class EngineAPI {
     }
 
     this.previewAnimation(this.currentTimelineTimeSeconds)
-  }
-}
-
-function createProjectNode(params: {
-  id: NodeId
-  parentId: NodeId | null
-  name: string
-  children: NodeId[]
-  t?: [number, number, number]
-  visible?: boolean
-  camera?: SceneNode['camera']
-  light?: SceneNode['light']
-  meshId?: string
-  materialId?: string
-}): SceneNode {
-  return {
-    id: params.id,
-    parentId: params.parentId,
-    children: params.children,
-    name: params.name,
-    t: params.t ?? [0, 0, 0],
-    r: [0, 0, 0, 1],
-    s: [1, 1, 1],
-    visible: params.visible ?? true,
-    ...(params.camera ? { camera: structuredClone(params.camera) } : {}),
-    ...(params.light ? { light: structuredClone(params.light) } : {}),
-    ...(params.meshId ? { meshId: params.meshId } : {}),
-    ...(params.materialId ? { materialId: params.materialId } : {}),
-  }
-}
-
-function getStudioGeometryTransform(kind: StudioGeometryKind): [number, number, number] {
-  switch (kind) {
-    case 'floor':
-      return [0, -0.78, 0]
-    case 'backdrop':
-      return [0, 0.55, -2.15]
-    case 'plinth':
-      return [0, -0.52, 0]
-  }
-}
-
-function getStudioLightTransform(lightId: string): [number, number, number] {
-  switch (lightId) {
-    case 'light-key':
-      return [1.8, 2.2, 2.4]
-    case 'light-fill':
-      return [-1.6, 1.4, 2]
-    case 'light-rim':
-      return [-1.2, 1.9, -2.4]
-    default:
-      return [0, 2, 2]
   }
 }
