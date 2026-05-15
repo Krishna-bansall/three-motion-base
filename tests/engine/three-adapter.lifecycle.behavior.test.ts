@@ -5,7 +5,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { ThreeAdapter } from '../../src/engine/runtime/three/ThreeAdapter.ts'
 import { createEmptySceneDoc, cloneSceneDoc } from '../../src/engine/scene/snapshot.ts'
 import { diffSceneDocs } from '../../src/engine/scene/diff.ts'
-import { getEnvironmentPreviews, HDRI_PATHS } from '../../src/engine/runtime/environment.ts'
+import { getEnvironmentPreviews, HDRI_PATHS, publicAsset, publicAssetWithBase } from '../../src/engine/runtime/environment.ts'
 import {
   buildConsoleState,
   buildSceneSnapshot,
@@ -597,6 +597,9 @@ test('environment previews and store bridge expose stable UI-ready state', () =>
     moody: '/hdri/moody.hdr',
     daylight: '/hdri/daylight.hdr',
   })
+  assert.equal(publicAsset('models/room/source/Untitled.glb'), '/models/room/source/Untitled.glb')
+  assert.equal(publicAssetWithBase('models/room/source/Untitled.glb', '/three-motion-base/'), '/three-motion-base/models/room/source/Untitled.glb')
+  assert.equal(publicAssetWithBase('/models/room/source/Untitled.glb', '/three-motion-base/'), '/three-motion-base/models/room/source/Untitled.glb')
   assert.equal(previews.length, 3)
   assert.equal(previews[0]?.imageUrl.startsWith('data:image/svg+xml'), true)
   assert.deepEqual(viewSettings.activeHDRI, 'moody')

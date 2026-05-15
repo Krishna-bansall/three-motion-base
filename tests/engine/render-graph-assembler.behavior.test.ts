@@ -5,6 +5,7 @@ import { createEmptySceneDoc } from '../../src/engine/scene/snapshot.ts'
 import type { AssetGraphDoc, SceneDoc } from '../../src/engine/scene/types.ts'
 import type { MountOverrides } from '../../src/engine/project/types.ts'
 import { assemble } from '../../src/engine/renderGraph/RenderGraphAssembler.ts'
+import { publicAsset } from '../../src/engine/runtime/environment.ts'
 
 test('assemble creates a render graph from project-owned studio setup without loading assets', () => {
   const project = applyStudioPreset(createDefaultProject(), 'soft-box-plinth')
@@ -40,7 +41,7 @@ test('assemble creates a render graph from project-owned studio setup without lo
     uri: 'builtin:studio/plinth',
   })
   assert.deepEqual(renderGraph.meshes['mesh-studio-geometry-backdrop'].source, {
-    uri: '/models/room/source/Untitled.glb',
+    uri: publicAsset('models/room/source/Untitled.glb'),
   })
   assert.deepEqual(renderGraph.nodes['node-studio-backdrop'].s, [4, 4, 4])
   assert.deepEqual(renderGraph.nodes['node-studio-floor'].t, [0, -1.1, 0])

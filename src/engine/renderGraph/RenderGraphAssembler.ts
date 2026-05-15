@@ -12,6 +12,7 @@ import type {
   ProjectDoc,
   StudioGeometryKind,
 } from '../project/types'
+import { publicAsset } from '../runtime/environment'
 
 export interface RenderGraphAssembler {
   assemble(project: ProjectDoc, mountedAssets: Map<ProductSlotId, AssetGraphDoc>): RenderGraphDoc
@@ -97,7 +98,7 @@ export function assemble(
     scene.meshes[`mesh-${object.id}`] = {
       source: {
         uri: isBackdrop
-          ? '/models/room/source/Untitled.glb'
+          ? publicAsset('models/room/source/Untitled.glb')
           : `builtin:studio/${object.kind}`,
       },
     }
