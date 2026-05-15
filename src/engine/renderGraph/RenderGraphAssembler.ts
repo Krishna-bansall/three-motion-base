@@ -82,6 +82,7 @@ export function assemble(
 
   for (const object of Object.values(project.studioScene.studioGeometry)) {
     const material = Object.values(project.studioScene.materials)[0]
+    const isBackdrop = object.kind === 'backdrop'
     scene.nodes[object.nodeId] = createProjectNode({
       id: object.nodeId,
       parentId: studioRootId,
@@ -89,12 +90,15 @@ export function assemble(
       children: [],
       visible: object.visible,
       t: getStudioGeometryTransform(object.kind),
+      s: isBackdrop ? [4, 4, 4] : undefined,
       meshId: `mesh-${object.id}`,
-      materialId: material?.materialId,
+      materialId: isBackdrop ? undefined : material?.materialId,
     })
     scene.meshes[`mesh-${object.id}`] = {
       source: {
-        uri: `builtin:studio/${object.kind}`,
+        uri: isBackdrop
+          ? '/models/room/source/Untitled.glb'
+          : `builtin:studio/${object.kind}`,
       },
     }
   }
@@ -198,6 +202,7 @@ function createProjectNode(params: {
   name: string
   children: NodeId[]
   t?: [number, number, number]
+  s?: [number, number, number]
   visible?: boolean
   camera?: SceneNode['camera']
   light?: SceneNode['light']
@@ -211,7 +216,7 @@ function createProjectNode(params: {
     name: params.name,
     t: params.t ?? [0, 0, 0],
     r: [0, 0, 0, 1],
-    s: [1, 1, 1],
+    s: params.s ?? [1, 1, 1],
     visible: params.visible ?? true,
     ...(params.camera ? { camera: structuredClone(params.camera) } : {}),
     ...(params.light ? { light: structuredClone(params.light) } : {}),
@@ -223,9 +228,9 @@ function createProjectNode(params: {
 function getStudioGeometryTransform(kind: StudioGeometryKind): [number, number, number] {
   switch (kind) {
     case 'floor':
-      return [0, -0.78, 0]
+      return [0, -1.1, 0]
     case 'backdrop':
-      return [0, 0.55, -2.15]
+      return [0, -0.55, -2.15]
     case 'plinth':
       return [0, -0.52, 0]
   }

@@ -13,7 +13,7 @@ import type {
   TransformGizmoMode,
   TRS,
 } from '../types'
-import { buildRuntimeSceneInstanceFromSource } from './runtimeScene'
+import { buildRuntimeSceneInstanceFromScene } from './runtimeScene'
 import type { SceneDelta } from '../../scene/diff'
 import type { NodeId, SceneDoc, SceneNode } from '../../scene/types'
 
@@ -75,7 +75,7 @@ export class ThreeAdapter implements RuntimeAdapter {
       return
     }
 
-    const instance = this.createRuntimeSceneInstance(scene)
+    const instance = await this.createRuntimeSceneInstance(scene)
     const rootObject = instance.rootObject as THREE.Object3D
     this.renderer.productRoot.add(rootObject)
 
@@ -225,15 +225,15 @@ export class ThreeAdapter implements RuntimeAdapter {
     }
   }
 
-  private createRuntimeSceneInstance(scene: SceneDoc): RuntimeSceneInstance {
+  private async createRuntimeSceneInstance(scene: SceneDoc): Promise<RuntimeSceneInstance> {
     if (this.sceneAssets?.source) {
-      return buildRuntimeSceneInstanceFromSource(scene, {
+      return buildRuntimeSceneInstanceFromScene(scene, {
         ...this.sceneAssets.source,
         rootNodeId: this.sceneAssets.source.rootNodeId ?? this.sceneAssets.rootNodeId,
       })
     }
 
-    return this.sceneAssets?.instantiate() ?? buildRuntimeSceneInstanceFromSource(scene)
+    return buildRuntimeSceneInstanceFromScene(scene)
   }
 
   private applyFullScene(scene: SceneDoc): void {

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { ThreeAdapter } from '../../src/engine/runtime/three/ThreeAdapter.ts'
 import { createEmptySceneDoc, cloneSceneDoc } from '../../src/engine/scene/snapshot.ts'
 import { diffSceneDocs } from '../../src/engine/scene/diff.ts'
@@ -112,7 +113,7 @@ function createWrappedStudioScene(): SceneDoc {
   scene.nodes['node-studio-root'] = {
     id: 'node-studio-root',
     parentId: null,
-    children: ['node-product-slot-primary', 'node-studio-floor'],
+    children: ['node-product-slot-primary', 'node-studio-floor', 'node-studio-backdrop'],
     name: 'Studio Scene',
     t: [0, 0, 0],
     r: [0, 0, 0, 1],
@@ -154,7 +155,33 @@ function createWrappedStudioScene(): SceneDoc {
     materialId: 'material-studio-matte-white',
     visible: true,
   }
+  scene.meshes['mesh-studio-geometry-backdrop'] = {
+    source: { uri: '/models/room/source/Untitled.glb' },
+  }
+  scene.nodes['node-studio-backdrop'] = {
+    id: 'node-studio-backdrop',
+    parentId: 'node-studio-root',
+    children: [],
+    name: 'Soft Backdrop',
+    t: [0, 0.55, -2.15],
+    r: [0, 0, 0, 1],
+    s: [1, 1, 1],
+    meshId: 'mesh-studio-geometry-backdrop',
+    visible: true,
+  }
   return scene
+}
+
+function createBackdropScene(): THREE.Group {
+  const root = new THREE.Group()
+  root.name = 'BackdropRoot'
+  const wall = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 0.1),
+    new THREE.MeshStandardMaterial({ color: new THREE.Color(0.95, 0.95, 0.95) }),
+  )
+  wall.name = 'BackdropWall'
+  root.add(wall)
+  return root
 }
 
 function createStudioSceneWithLightRig(): SceneDoc {
@@ -324,25 +351,40 @@ test('ThreeAdapter builds from adapter-owned source data and keeps material clon
   assert.equal(secondMaterial.roughness, 0.4)
 })
 
-test('ThreeAdapter realizes Studio Scene wrapper nodes and built-in studio geometry', async () => {
+test('ThreeAdapter realizes Studio Scene wrapper nodes and asset-backed backdrop geometry', async () => {
   const adapter = new ThreeAdapter()
   const runtime = attachFakeRenderer(adapter)
+  const originalLoadAsync = GLTFLoader.prototype.loadAsync
 
-  adapter.setSceneAssets(createRuntimeSourceAssets())
-  await adapter.buildFromCanonical(createWrappedStudioScene())
+  GLTFLoader.prototype.loadAsync = async function mockedLoadAsync(url: string) {
+    if (url === '/models/room/source/Untitled.glb') {
+      return { scene: createBackdropScene() } as never
+    }
 
-  const studioRoot = runtime.productRoot.children[0] as THREE.Group
-  const productSlot = studioRoot.children[0] as THREE.Group
-  const productRoot = productSlot.children[0] as THREE.Group
-  const floor = studioRoot.children[1] as THREE.Mesh
-  const floorMaterial = floor.material as THREE.MeshStandardMaterial
+    throw new Error(`Unexpected GLTF load: ${url}`)
+  }
 
-  assert.equal(studioRoot.userData.threeMotionNodeId, 'node-studio-root')
-  assert.equal(productSlot.userData.threeMotionNodeId, 'node-product-slot-primary')
-  assert.equal(productRoot.userData.threeMotionNodeId, 'node-root')
-  assert.equal(floor.userData.threeMotionNodeId, 'node-studio-floor')
-  assert.equal(floorMaterial.userData.threeMotionMaterialId, 'material-studio-matte-white')
-  assert.equal(runtime.getInteractionTarget()?.userData.threeMotionNodeId, 'node-root')
+  try {
+    adapter.setSceneAssets(createRuntimeSourceAssets())
+    await adapter.buildFromCanonical(createWrappedStudioScene())
+
+    const studioRoot = runtime.productRoot.children[0] as THREE.Group
+    const productSlot = studioRoot.children[0] as THREE.Group
+    const productRoot = productSlot.children[0] as THREE.Group
+    const floor = studioRoot.children[1] as THREE.Mesh
+    const backdrop = studioRoot.children[2] as THREE.Group
+    const floorMaterial = floor.material as THREE.MeshStandardMaterial
+
+    assert.equal(studioRoot.userData.threeMotionNodeId, 'node-studio-root')
+    assert.equal(productSlot.userData.threeMotionNodeId, 'node-product-slot-primary')
+    assert.equal(productRoot.userData.threeMotionNodeId, 'node-root')
+    assert.equal(floor.userData.threeMotionNodeId, 'node-studio-floor')
+    assert.equal(backdrop.userData.threeMotionNodeId, 'node-studio-backdrop')
+    assert.equal(floorMaterial.userData.threeMotionMaterialId, 'material-studio-matte-white')
+    assert.equal(runtime.getInteractionTarget()?.userData.threeMotionNodeId, 'node-root')
+  } finally {
+    GLTFLoader.prototype.loadAsync = originalLoadAsync
+  }
 })
 
 test('ThreeAdapter.applyDirty patches transforms and materials without rebuilding runtime children', async () => {

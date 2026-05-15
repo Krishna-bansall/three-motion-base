@@ -35,9 +35,16 @@ test('assemble creates a render graph from project-owned studio setup without lo
     color: [1, 0.98, 0.95],
   })
   assert.equal(renderGraph.nodes['node-studio-floor'].meshId, 'mesh-studio-geometry-floor')
+  assert.equal(renderGraph.nodes['node-studio-backdrop'].materialId, undefined)
   assert.deepEqual(renderGraph.meshes['mesh-studio-geometry-plinth'].source, {
     uri: 'builtin:studio/plinth',
   })
+  assert.deepEqual(renderGraph.meshes['mesh-studio-geometry-backdrop'].source, {
+    uri: '/models/room/source/Untitled.glb',
+  })
+  assert.deepEqual(renderGraph.nodes['node-studio-backdrop'].s, [4, 4, 4])
+  assert.deepEqual(renderGraph.nodes['node-studio-floor'].t, [0, -1.1, 0])
+  assert.deepEqual(renderGraph.nodes['node-studio-backdrop'].t, [0, -0.55, -2.15])
   assert.equal(renderGraph.materials['material-studio-matte-white'].roughness, 0.78)
 })
 

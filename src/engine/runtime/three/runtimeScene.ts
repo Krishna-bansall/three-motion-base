@@ -1,6 +1,16 @@
 import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
 import type { NodeId, SceneDoc, SceneNode } from '../../scene/types'
 import type { RuntimeSceneInstance, RuntimeSceneSource } from '../types'
+
+const externalTemplateLoader = new GLTFLoader()
+const externalDracoLoader = new DRACOLoader()
+externalDracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/')
+externalDracoLoader.setDecoderConfig({ type: 'js' })
+externalTemplateLoader.setDRACOLoader(externalDracoLoader)
+
+const externalTemplateCache = new Map<string, Promise<THREE.Object3D>>()
 
 export function buildRuntimeSceneInstanceFromSource(
   scene: SceneDoc,
@@ -26,11 +36,58 @@ export function buildRuntimeSceneInstanceFromSource(
   }
 
   const rootObject = rootNodeId && scene.nodes[rootNodeId]
-    ? buildCanonicalObject(scene, rootNodeId, {
-        importedNodeObjects,
-        nodeObjects,
-        materialObjects,
-      })
+    ? buildCanonicalObjectSync(
+        scene,
+        rootNodeId,
+        {
+          importedNodeObjects,
+          nodeObjects,
+          materialObjects,
+        },
+      )
+    : new THREE.Group()
+
+  return {
+    rootNodeId,
+    rootObject,
+    nodeObjects,
+    materialObjects,
+  }
+}
+
+export async function buildRuntimeSceneInstanceFromScene(
+  scene: SceneDoc,
+  source?: RuntimeSceneSource,
+): Promise<RuntimeSceneInstance> {
+  const importedRootNodeId = source?.rootNodeId ?? ''
+  const importedRootObject = source
+    ? cloneTemplateObject(source.templateRoot as THREE.Object3D)
+    : new THREE.Group()
+  const importedNodeObjects = new Map<NodeId, object>()
+  const nodeObjects = new Map<NodeId, object>()
+  const materialObjects = new Map<string, object[]>()
+  const rootNodeId = scene.roots[0] ?? importedRootNodeId
+
+  if (importedRootNodeId && scene.nodes[importedRootNodeId]) {
+    mapImportedSceneNodeToObject(
+      scene,
+      importedRootNodeId,
+      importedRootObject,
+      importedNodeObjects,
+      materialObjects,
+    )
+  }
+
+  const rootObject = rootNodeId && scene.nodes[rootNodeId]
+    ? await buildCanonicalObjectAsync(
+        scene,
+        rootNodeId,
+        {
+          importedNodeObjects,
+          nodeObjects,
+          materialObjects,
+        },
+      )
     : new THREE.Group()
 
   return {
@@ -57,6 +114,76 @@ function cloneTemplateObject(templateRoot: THREE.Object3D): THREE.Object3D {
   return clone
 }
 
+function buildCanonicalObjectSync(
+  scene: SceneDoc,
+  nodeId: NodeId,
+  context: {
+    importedNodeObjects: Map<NodeId, object>
+    nodeObjects: Map<NodeId, object>
+    materialObjects: Map<string, object[]>
+  },
+): THREE.Object3D {
+  const node = scene.nodes[nodeId]
+  const importedObject = context.importedNodeObjects.get(nodeId) as THREE.Object3D | undefined
+  const object = importedObject ?? createObjectForNodeSync(scene, node)
+
+  tagObject(nodeId, object)
+  applySceneNodeState(node, object)
+  context.nodeObjects.set(nodeId, object)
+  collectMaterialObject(node, object, context.materialObjects)
+
+  if (importedObject) {
+    for (const [importedNodeId, childObject] of context.importedNodeObjects.entries()) {
+      context.nodeObjects.set(importedNodeId, childObject)
+    }
+    return object
+  }
+
+  for (const childId of node.children) {
+    const child = scene.nodes[childId]
+    if (!child) continue
+
+    object.add(buildCanonicalObjectSync(scene, childId, context))
+  }
+
+  return object
+}
+
+async function buildCanonicalObjectAsync(
+  scene: SceneDoc,
+  nodeId: NodeId,
+  context: {
+    importedNodeObjects: Map<NodeId, object>
+    nodeObjects: Map<NodeId, object>
+    materialObjects: Map<string, object[]>
+  },
+): Promise<THREE.Object3D> {
+  const node = scene.nodes[nodeId]
+  const importedObject = context.importedNodeObjects.get(nodeId) as THREE.Object3D | undefined
+  const object = importedObject ?? await createObjectForNodeAsync(scene, node)
+
+  tagObject(nodeId, object)
+  applySceneNodeState(node, object)
+  context.nodeObjects.set(nodeId, object)
+  collectMaterialObject(node, object, context.materialObjects)
+
+  if (importedObject) {
+    for (const [importedNodeId, childObject] of context.importedNodeObjects.entries()) {
+      context.nodeObjects.set(importedNodeId, childObject)
+    }
+    return object
+  }
+
+  for (const childId of node.children) {
+    const child = scene.nodes[childId]
+    if (!child) continue
+
+    object.add(await buildCanonicalObjectAsync(scene, childId, context))
+  }
+
+  return object
+}
+
 function mapImportedSceneNodeToObject(
   scene: SceneDoc,
   nodeId: NodeId,
@@ -81,42 +208,7 @@ function mapImportedSceneNodeToObject(
   }
 }
 
-function buildCanonicalObject(
-  scene: SceneDoc,
-  nodeId: NodeId,
-  context: {
-    importedNodeObjects: Map<NodeId, object>
-    nodeObjects: Map<NodeId, object>
-    materialObjects: Map<string, object[]>
-  },
-): THREE.Object3D {
-  const node = scene.nodes[nodeId]
-  const importedObject = context.importedNodeObjects.get(nodeId) as THREE.Object3D | undefined
-  const object = importedObject ?? createObjectForNode(scene, node)
-
-  tagObject(nodeId, object)
-  applySceneNodeState(node, object)
-  context.nodeObjects.set(nodeId, object)
-  collectMaterialObject(node, object, context.materialObjects)
-
-  if (importedObject) {
-    for (const [importedNodeId, childObject] of context.importedNodeObjects.entries()) {
-      context.nodeObjects.set(importedNodeId, childObject)
-    }
-    return object
-  }
-
-  for (const childId of node.children) {
-    const child = scene.nodes[childId]
-    if (!child) continue
-
-    object.add(buildCanonicalObject(scene, childId, context))
-  }
-
-  return object
-}
-
-function createObjectForNode(scene: SceneDoc, node: SceneNode): THREE.Object3D {
+function createObjectForNodeSync(scene: SceneDoc, node: SceneNode): THREE.Object3D {
   if (node.light) {
     return createLight(node.light)
   }
@@ -143,6 +235,52 @@ function createObjectForNode(scene: SceneDoc, node: SceneNode): THREE.Object3D {
     default:
       return new THREE.Group()
   }
+}
+
+async function createObjectForNodeAsync(scene: SceneDoc, node: SceneNode): Promise<THREE.Object3D> {
+  if (node.light) {
+    return createLight(node.light)
+  }
+
+  if (node.camera) {
+    return new THREE.PerspectiveCamera(node.camera.fovDegrees, 1, node.camera.near, node.camera.far)
+  }
+
+  const mesh = node.meshId ? scene.meshes[node.meshId] : undefined
+
+  if (!mesh) {
+    return new THREE.Group()
+  }
+
+  const material = createMaterial(scene, node.materialId)
+
+  switch (mesh.source.uri) {
+    case 'builtin:studio/floor':
+      return new THREE.Mesh(new THREE.CircleGeometry(3.2, 96), material)
+    case 'builtin:studio/backdrop':
+      return new THREE.Mesh(new THREE.BoxGeometry(5.4, 2.8, 0.12), material)
+    case 'builtin:studio/plinth':
+      return new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.82, 0.46, 64), material)
+    default:
+      return isExternalAssetUri(mesh.source.uri)
+        ? loadExternalTemplate(mesh.source.uri)
+        : new THREE.Group()
+  }
+}
+
+function isExternalAssetUri(uri: string): boolean {
+  return uri.startsWith('/') || uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('file://')
+}
+
+async function loadExternalTemplate(uri: string): Promise<THREE.Object3D> {
+  const cached = externalTemplateCache.get(uri)
+  if (cached) {
+    return cloneTemplateObject(await cached)
+  }
+
+  const loadPromise = externalTemplateLoader.loadAsync(uri).then((gltf) => gltf.scene)
+  externalTemplateCache.set(uri, loadPromise)
+  return cloneTemplateObject(await loadPromise)
 }
 
 function createMaterial(scene: SceneDoc, materialId: string | undefined): THREE.Material {

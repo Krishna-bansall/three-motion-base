@@ -1,6 +1,7 @@
 import type { EnvironmentPreview, HDRIPreset } from './types'
 
-const publicAsset = (path: string): string => `${import.meta.env.BASE_URL}${path}`
+const BASE_URL = import.meta.env?.BASE_URL ?? '/'
+const publicAsset = (path: string): string => `${BASE_URL}${path}`
 
 /** Bundled HDRI files served from `public/hdri`. */
 export const HDRI_PATHS: Record<HDRIPreset, string> = {

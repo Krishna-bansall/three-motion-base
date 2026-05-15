@@ -582,7 +582,7 @@ export function applyStudioPreset(project: ProjectDoc, presetId: StudioPresetId)
       visible: true,
       editable: {
         transform: ['position', 'scale'],
-        material: true,
+        material: false,
         visibility: true,
         animationTarget: false,
       },

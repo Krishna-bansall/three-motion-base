@@ -301,6 +301,7 @@ test('applyStudioPreset creates limited-editable studio objects for product stag
     visibility: true,
     animationTarget: false,
   })
+  assert.equal(updated.studioScene.studioGeometry['studio-geometry-backdrop'].editable.material, false)
   assert.deepEqual(project.studioScene.studioGeometry, {})
 })
 

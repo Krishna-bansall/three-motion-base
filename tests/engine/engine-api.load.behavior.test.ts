@@ -398,6 +398,10 @@ test('EngineAPI applies a studio preset before import and preserves it through r
     'material-studio-matte-white',
   )
   assert.equal(
+    engine.getCanonicalSceneSnapshot()?.meshes['mesh-studio-geometry-backdrop']?.source.uri,
+    '/models/room/source/Untitled.glb',
+  )
+  assert.equal(
     engine.getCanonicalSceneSnapshot()?.meshes['mesh-studio-geometry-plinth']?.source.uri,
     'builtin:studio/plinth',
   )
