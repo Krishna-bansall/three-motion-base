@@ -39,6 +39,7 @@ function App() {
   const [editorMode, setEditorMode] = useState<EditorMode>('setup')
   const [timelineCategory, setTimelineCategory] = useState<TimelineCategory>('all')
   const [selectedTargetNodeId, setSelectedTargetNodeId] = useState<string | null>(null)
+  const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null)
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null)
   const [isTimelinePlaying, setIsTimelinePlaying] = useState(false)
   const playbackFrameRef = useRef<number | null>(null)
@@ -54,11 +55,32 @@ function App() {
     ? selectedTargetNodeId
     : (timelineRows[0]?.targetNodeId ?? null)
 
+  const selectedRow = effectiveSelectedTargetNodeId
+    ? timelineRows.find((row) => row.targetNodeId === effectiveSelectedTargetNodeId) ?? null
+    : null
+
+  const effectiveSelectedTrackId = selectedRow && selectedTrackId
+    ? selectedRow.tracks.some((track) => track.id === selectedTrackId)
+      ? selectedTrackId
+      : null
+    : null
+
+  const resolvedSelectedTrackId = selectedRow
+    ? effectiveSelectedTrackId
+      ?? selectedRow.tracks.find((track) => track.layers.some((layer) => layer.id === selectedLayerId))?.id
+      ?? selectedRow.tracks[0]?.id
+      ?? null
+    : null
+
+  const selectedTrack = selectedRow
+    ? selectedRow.tracks.find((track) => track.id === resolvedSelectedTrackId) ?? null
+    : null
+
   const effectiveSelectedLayerId = selectedLayerId && timelineRows.some(
     (row) => row.tracks.some((track) => track.layers.some((layer) => layer.id === selectedLayerId)),
   )
     ? selectedLayerId
-    : null
+    : selectedTrack?.layers[0]?.id ?? selectedRow?.tracks.flatMap((track) => track.layers)[0]?.id ?? null
 
   const canPlayTimeline = editorMode === 'animate' && timelineRows.length > 0 && activeShot.durationSeconds > 0
   const timelinePlaybackActive = isTimelinePlaying && canPlayTimeline
@@ -74,6 +96,7 @@ function App() {
   const handleEditorModeChange = useCallback((nextMode: EditorMode) => {
     if (nextMode === 'setup') {
       setIsTimelinePlaying(false)
+      setSelectedTrackId(null)
       setSelectedLayerId(null)
     }
 
@@ -200,6 +223,18 @@ function App() {
     seekTimeline(clampedTime)
   }, [activeShot.durationSeconds, seekTimeline, timelineTimeSeconds])
 
+  const handleSelectTarget = useCallback((nodeId: string) => {
+    setSelectedTargetNodeId(nodeId)
+  }, [])
+
+  const handleSelectTrack = useCallback((trackId: string | null) => {
+    setSelectedTrackId(trackId)
+  }, [])
+
+  const handleSelectLayer = useCallback((layerId: string | null) => {
+    setSelectedLayerId(layerId)
+  }, [])
+
   if (!modelSource) {
     return <StartScreen onModelSelected={handleModelSelected} />
   }
@@ -219,9 +254,11 @@ function App() {
             onTogglePlayback={handleToggleTimelinePlayback}
             onSeek={handleTimelineSeek}
             selectedTargetNodeId={effectiveSelectedTargetNodeId}
+            selectedTrackId={resolvedSelectedTrackId}
             selectedLayerId={effectiveSelectedLayerId}
-            onSelectTarget={setSelectedTargetNodeId}
-            onSelectLayer={setSelectedLayerId}
+            onSelectTarget={handleSelectTarget}
+            onSelectTrack={handleSelectTrack}
+            onSelectLayer={handleSelectLayer}
             onAddTrack={(nodeId) => engine.addTrack(nodeId)}
             onRemoveTrack={(nodeId, trackId) => engine.removeTrack(nodeId, trackId)}
           />
@@ -262,9 +299,11 @@ function App() {
             <AnimatePanel
               engine={engine}
               selectedTargetNodeId={effectiveSelectedTargetNodeId}
+              selectedTrackId={resolvedSelectedTrackId}
               selectedLayerId={effectiveSelectedLayerId}
-              onSelectTarget={setSelectedTargetNodeId}
-              onSelectLayer={setSelectedLayerId}
+              onSelectTarget={handleSelectTarget}
+              onSelectTrack={handleSelectTrack}
+              onSelectLayer={handleSelectLayer}
             />
           )}
           <ExportPanel engine={engine} />

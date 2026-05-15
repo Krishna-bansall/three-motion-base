@@ -458,6 +458,22 @@ test('EngineAPI publishes timeline rows and motion layers for animate mode', asy
   assert.equal(cameraLayer?.easing, 'ease-out')
 })
 
+test('EngineAPI can add a motion preset to a secondary track in the active row', () => {
+  const { engine } = createMountedEngine()
+
+  const trackId = engine.addTrack('node-product-slot-primary', 'Spin')
+  const layerId = engine.addMotionPreset('node-product-slot-primary', 'object-spin', trackId)
+
+  const state = useEngineStore.getState()
+  const productRow = state.timelineRows.find((row) => row.targetNodeId === 'node-product-slot-primary')
+
+  assert.equal(productRow?.tracks.length, 2)
+  assert.equal(productRow?.tracks[1]?.id, trackId)
+  assert.equal(productRow?.tracks[1]?.layers[0]?.id, layerId)
+  assert.equal(productRow?.tracks[1]?.layers[0]?.presetId, 'object-spin')
+  assert.equal(productRow?.tracks[0]?.layers.length, 0)
+})
+
 test('loadModelFromFile uses the shared load path and revokes its blob URL', async () => {
   const { engine } = createMountedEngine()
   const file = new File(['binary'], 'product.glb', { type: 'model/gltf-binary' })

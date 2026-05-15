@@ -10,8 +10,10 @@ interface TimelinePanelProps {
   onTogglePlayback: () => void
   onSeek: (timeSeconds: number) => void
   selectedTargetNodeId: string | null
+  selectedTrackId: string | null
   selectedLayerId: string | null
   onSelectTarget: (nodeId: string) => void
+  onSelectTrack: (trackId: string | null) => void
   onSelectLayer: (layerId: string | null) => void
   onAddTrack: (targetNodeId: string) => void
   onRemoveTrack: (targetNodeId: string, trackId: string) => void
@@ -24,8 +26,10 @@ export function TimelinePanel({
   onTogglePlayback,
   onSeek,
   selectedTargetNodeId,
+  selectedTrackId,
   selectedLayerId,
   onSelectTarget,
+  onSelectTrack,
   onSelectLayer,
   onAddTrack,
   onRemoveTrack,
@@ -87,7 +91,8 @@ export function TimelinePanel({
 
       <div className="timeline-grid">
         {visibleRows.map((row) => {
-          const firstLayer = row.tracks.flatMap((track) => track.layers)[0] ?? null
+          const firstTrack = row.tracks[0] ?? null
+          const firstLayer = firstTrack?.layers[0] ?? row.tracks.flatMap((track) => track.layers)[0] ?? null
 
           return (
             <div
@@ -98,6 +103,7 @@ export function TimelinePanel({
                 className="timeline-row-label"
                 onClick={() => {
                   onSelectTarget(row.targetNodeId)
+                  onSelectTrack(firstTrack?.id ?? null)
                   onSelectLayer(firstLayer?.id ?? null)
                 }}
               >
@@ -111,8 +117,10 @@ export function TimelinePanel({
                     track={track}
                     targetNodeId={row.targetNodeId}
                     shotDurationSeconds={activeShot.durationSeconds}
+                    selectedTrackId={selectedTrackId}
                     selectedLayerId={selectedLayerId}
                     onSelectTarget={onSelectTarget}
+                    onSelectTrack={onSelectTrack}
                     onSelectLayer={onSelectLayer}
                     canRemove={row.tracks.length > 1}
                     onRemoveTrack={() => onRemoveTrack(row.targetNodeId, track.id)}
@@ -138,8 +146,10 @@ function TrackLane(
     track: TimelineTrackInfo
     targetNodeId: string
     shotDurationSeconds: number
+    selectedTrackId: string | null
     selectedLayerId: string | null
     onSelectTarget: (nodeId: string) => void
+    onSelectTrack: (trackId: string | null) => void
     onSelectLayer: (layerId: string | null) => void
     canRemove: boolean
     onRemoveTrack: () => void
@@ -149,17 +159,30 @@ function TrackLane(
     track,
     targetNodeId,
     shotDurationSeconds,
+    selectedTrackId,
     selectedLayerId,
     onSelectTarget,
+    onSelectTrack,
     onSelectLayer,
     canRemove,
     onRemoveTrack,
   } = props
 
+  const isActive = selectedTrackId === track.id
+
   return (
-    <div className={`timeline-track ${track.enabled ? '' : 'muted'}`}>
+    <div className={`timeline-track ${track.enabled ? '' : 'muted'} ${isActive ? 'active' : ''}`}>
       <div className="timeline-track-header">
-        <span className="timeline-track-name">{track.name}</span>
+        <button
+          className="timeline-track-name-btn"
+          onClick={() => {
+            onSelectTarget(targetNodeId)
+            onSelectTrack(track.id)
+            onSelectLayer(track.layers[0]?.id ?? null)
+          }}
+        >
+          <span className="timeline-track-name">{track.name}</span>
+        </button>
         {canRemove ? (
           <button className="timeline-track-remove-btn" onClick={onRemoveTrack} title="Remove track">
             Remove
@@ -176,6 +199,7 @@ function TrackLane(
             style={layerStyle(layer.startTimeSeconds, layer.durationSeconds, shotDurationSeconds)}
             onClick={() => {
               onSelectTarget(targetNodeId)
+              onSelectTrack(track.id)
               onSelectLayer(layer.id)
             }}
             title={`${layer.name} · ${layer.startTimeSeconds.toFixed(2)}s → ${(layer.startTimeSeconds + layer.durationSeconds).toFixed(2)}s`}

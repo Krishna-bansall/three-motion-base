@@ -12,8 +12,10 @@ import { useEngineStore } from '../../store/useEngineStore'
 interface AnimatePanelProps {
   engine: EngineAPI
   selectedTargetNodeId: string | null
+  selectedTrackId: string | null
   selectedLayerId: string | null
   onSelectTarget: (nodeId: string) => void
+  onSelectTrack: (trackId: string | null) => void
   onSelectLayer: (layerId: string | null) => void
 }
 
@@ -27,15 +29,20 @@ const EASING_OPTIONS: Array<{ value: MotionEasing; label: string }> = [
 export function AnimatePanel({
   engine,
   selectedTargetNodeId,
+  selectedTrackId,
   selectedLayerId,
   onSelectTarget,
+  onSelectTrack,
   onSelectLayer,
 }: AnimatePanelProps) {
   const activeShot = useEngineStore((s) => s.activeShot)
   const rows = useEngineStore((s) => s.timelineRows)
   const selectedRow = rows.find((row) => row.targetNodeId === selectedTargetNodeId) ?? rows[0] ?? null
-  const selectedRowLayers = selectedRow?.tracks.flatMap((track) => track.layers) ?? []
-  const selectedLayer = selectedRowLayers.find((layer) => layer.id === selectedLayerId) ?? null
+  const selectedTrack = selectedRow?.tracks.find((track) => track.id === selectedTrackId) ?? selectedRow?.tracks[0] ?? null
+  const selectedLayer = selectedTrack?.layers.find((layer) => layer.id === selectedLayerId)
+    ?? selectedTrack?.layers[0]
+    ?? selectedRow?.tracks.flatMap((track) => track.layers)[0]
+    ?? null
   const presets = selectedRow ? engine.getMotionPresets(selectedRow.targetKind) : []
   const selectedPreset = selectedLayer
     ? presets.find((preset) => preset.id === selectedLayer.presetId) ?? null
@@ -59,7 +66,8 @@ export function AnimatePanel({
 
       <div className="target-picker">
         {rows.map((row) => {
-          const rowLayers = row.tracks.flatMap((track) => track.layers)
+          const rowTracks = row.tracks
+          const rowLayers = rowTracks.flatMap((track) => track.layers)
 
           return (
             <button
@@ -67,6 +75,7 @@ export function AnimatePanel({
               className={`target-pill ${selectedRow?.targetNodeId === row.targetNodeId ? 'active' : ''}`}
               onClick={() => {
                 onSelectTarget(row.targetNodeId)
+                onSelectTrack(rowTracks[0]?.id ?? null)
                 onSelectLayer(rowLayers[0]?.id ?? null)
               }}
             >
@@ -78,6 +87,41 @@ export function AnimatePanel({
       </div>
 
       <div className="panel-section">
+        <div className="section-label">Tracks</div>
+        {selectedRow ? (
+          <div className="track-picker">
+            {selectedRow.tracks.map((track) => (
+              <button
+                key={track.id}
+                className={`track-pill ${selectedTrack?.id === track.id ? 'active' : ''}`}
+                onClick={() => {
+                  onSelectTarget(selectedRow.targetNodeId)
+                  onSelectTrack(track.id)
+                  onSelectLayer(track.layers[0]?.id ?? null)
+                }}
+              >
+                <span>{track.name}</span>
+                <small>{track.layers.length}</small>
+              </button>
+            ))}
+            <button
+              className="track-add-pill"
+              onClick={() => {
+                const nextTrackId = engine.addTrack(selectedRow.targetNodeId)
+                onSelectTarget(selectedRow.targetNodeId)
+                onSelectTrack(nextTrackId)
+                onSelectLayer(null)
+              }}
+            >
+              + Track
+            </button>
+          </div>
+        ) : (
+          <p className="panel-empty">Select a target to manage tracks</p>
+        )}
+      </div>
+
+      <div className="panel-section">
         <div className="section-label">Presets</div>
         {selectedRow ? (
           <div className="preset-grid">
@@ -86,8 +130,9 @@ export function AnimatePanel({
                 key={preset.id}
                 className="preset-card"
                 onClick={() => {
-                  const layerId = engine.addMotionPreset(selectedRow.targetNodeId, preset.id)
+                  const layerId = engine.addMotionPreset(selectedRow.targetNodeId, preset.id, selectedTrack?.id)
                   onSelectTarget(selectedRow.targetNodeId)
+                  onSelectTrack(selectedTrack?.id ?? null)
                   onSelectLayer(layerId)
                 }}
               >

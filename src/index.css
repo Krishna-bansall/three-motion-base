@@ -1780,6 +1780,10 @@ html, body, #root {
   gap: 6px;
 }
 
+.timeline-track.active .timeline-track-lane {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
 .timeline-track.muted {
   opacity: 0.55;
 }
@@ -1789,6 +1793,16 @@ html, body, #root {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.timeline-track-name-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
 }
 
 .timeline-track-name {
