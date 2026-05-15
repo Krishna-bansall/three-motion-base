@@ -7,6 +7,7 @@ import type {
   SceneNode,
 } from '../scene/types'
 import type {
+  MountOverrides,
   ProductSlotId,
   ProjectDoc,
   StudioGeometryKind,
@@ -108,7 +109,8 @@ export function assemble(
   }
 
   if (primaryAsset) {
-    mountAssetGraph(scene, primarySlot.nodeId, primaryAsset)
+    const mountOverrides = primarySlot.asset?.mount?.overrides ?? emptyMountOverrides()
+    mountAssetGraph(scene, primarySlot.nodeId, primaryAsset, mountOverrides)
   }
 
   return scene
@@ -118,6 +120,7 @@ function mountAssetGraph(
   renderGraph: RenderGraphDoc,
   parentNodeId: NodeId,
   assetGraph: AssetGraphDoc,
+  overrides: MountOverrides,
 ): void {
   const mountedGraph = structuredClone(assetGraph) as SceneDoc
 
@@ -141,6 +144,48 @@ function mountAssetGraph(
   renderGraph.materials = {
     ...renderGraph.materials,
     ...mountedGraph.materials,
+  }
+
+  applyMountOverrides(renderGraph, overrides)
+}
+
+function applyMountOverrides(renderGraph: RenderGraphDoc, overrides: MountOverrides): void {
+  for (const [nodeId, visibilityOverride] of Object.entries(overrides.visibility)) {
+    const node = renderGraph.nodes[nodeId]
+    if (node) {
+      node.visible = visibilityOverride.visible
+    }
+  }
+
+  for (const [nodeId, transformOverride] of Object.entries(overrides.transforms)) {
+    const node = renderGraph.nodes[nodeId]
+    if (node) {
+      if (transformOverride.t) node.t = [...transformOverride.t]
+      if (transformOverride.r) node.r = [...transformOverride.r]
+      if (transformOverride.s) node.s = [...transformOverride.s]
+    }
+  }
+
+  for (const [nodeId, materialOverride] of Object.entries(overrides.materials)) {
+    const node = renderGraph.nodes[nodeId]
+    if (node?.materialId) {
+      const material = renderGraph.materials[node.materialId]
+      if (material) {
+        if (materialOverride.baseColor) material.baseColor = [...materialOverride.baseColor]
+        if (materialOverride.roughness !== undefined) material.roughness = materialOverride.roughness
+        if (materialOverride.metalness !== undefined) material.metalness = materialOverride.metalness
+        if (materialOverride.envMapIntensity !== undefined) material.envMapIntensity = materialOverride.envMapIntensity
+      }
+    }
+  }
+}
+
+function emptyMountOverrides(): MountOverrides {
+  return {
+    transforms: {},
+    materials: {},
+    visibility: {},
+    variants: {},
   }
 }
 

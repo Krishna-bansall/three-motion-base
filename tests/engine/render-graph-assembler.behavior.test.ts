@@ -2,7 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { applyStudioPreset, createDefaultProject, replaceProductSlotAsset } from '../../src/engine/project/document.ts'
 import { createEmptySceneDoc } from '../../src/engine/scene/snapshot.ts'
-import type { AssetGraphDoc, SceneDoc } from '../../src/engine/scene/types.ts'
+import type { AssetGraphDoc, RenderGraphDoc, SceneDoc } from '../../src/engine/scene/types.ts'
+import type { MountOverrides } from '../../src/engine/project/types.ts'
 import { assemble } from '../../src/engine/renderGraph/RenderGraphAssembler.ts'
 
 test('assemble creates a render graph from project-owned studio setup without loading assets', () => {
@@ -186,3 +187,127 @@ function createAssetGraphWithLight(): AssetGraphDoc {
   }
   return scene
 }
+
+test('assemble applies visibility overrides from mount overrides to mounted asset nodes', () => {
+  const baseProject = createDefaultProject()
+  const project = replaceProductSlotAsset(baseProject, {
+    uri: 'file:///imports/watch.glb',
+    rootNodeId: 'asset-root',
+  })
+  // Simulate a mount with a visibility override hiding 'asset-child'
+  const mountOverrides: MountOverrides = {
+    transforms: {},
+    materials: {},
+    visibility: {
+      'asset-child': { visible: false },
+    },
+    variants: {},
+  }
+  const slotId = project.studioScene.primaryProductSlotId
+  project.studioScene.productSlots[slotId]!.asset = {
+    ...project.studioScene.productSlots[slotId]!.asset!,
+    mount: {
+      id: `mount-${slotId}`,
+      kind: 'product-slot',
+      slotId,
+      assetId: 'asset-watch',
+      assetRootNodeId: 'asset-root',
+      overrides: mountOverrides,
+    },
+  }
+  const assetGraph = createAssetGraph()
+
+  const renderGraph = assemble(project, new Map([
+    ['product-slot-primary', assetGraph],
+  ]))
+
+  // The asset-child should be hidden in the render graph via the override
+  assert.equal(renderGraph.nodes['asset-child'].visible, false)
+  // The root should remain visible (no override)
+  assert.equal(renderGraph.nodes['asset-root'].visible, true)
+})
+
+test('assemble applies material overrides from mount overrides to mounted asset nodes', () => {
+  const baseProject = createDefaultProject()
+  const project = replaceProductSlotAsset(baseProject, {
+    uri: 'file:///imports/watch.glb',
+    rootNodeId: 'asset-root',
+  })
+  // Simulate a mount with a material override changing roughness on 'asset-child'
+  const mountOverrides: MountOverrides = {
+    transforms: {},
+    materials: {
+      'asset-child': {
+        roughness: 0.9,
+        metalness: 0.1,
+      },
+    },
+    visibility: {},
+    variants: {},
+  }
+  const slotId = project.studioScene.primaryProductSlotId
+  project.studioScene.productSlots[slotId]!.asset = {
+    ...project.studioScene.productSlots[slotId]!.asset!,
+    mount: {
+      id: `mount-${slotId}`,
+      kind: 'product-slot',
+      slotId,
+      assetId: 'asset-watch',
+      assetRootNodeId: 'asset-root',
+      overrides: mountOverrides,
+    },
+  }
+  const assetGraph = createAssetGraph()
+
+  const renderGraph = assemble(project, new Map([
+    ['product-slot-primary', assetGraph],
+  ]))
+
+  // The asset-child's material should be patched by the override
+  assert.equal(renderGraph.materials['material-watch-body'].roughness, 0.9)
+  assert.equal(renderGraph.materials['material-watch-body'].metalness, 0.1)
+  // Base color should be preserved (not overridden)
+  assert.deepEqual(renderGraph.materials['material-watch-body'].baseColor, [0.7, 0.2, 0.1])
+})
+
+test('assemble applies transform overrides from mount overrides to mounted asset nodes', () => {
+  const baseProject = createDefaultProject()
+  const project = replaceProductSlotAsset(baseProject, {
+    uri: 'file:///imports/watch.glb',
+    rootNodeId: 'asset-root',
+  })
+  // Simulate a mount with a transform override translating 'asset-child'
+  const mountOverrides: MountOverrides = {
+    transforms: {
+      'asset-child': {
+        t: [1, 2, 3],
+      },
+    },
+    materials: {},
+    visibility: {},
+    variants: {},
+  }
+  const slotId = project.studioScene.primaryProductSlotId
+  project.studioScene.productSlots[slotId]!.asset = {
+    ...project.studioScene.productSlots[slotId]!.asset!,
+    mount: {
+      id: `mount-${slotId}`,
+      kind: 'product-slot',
+      slotId,
+      assetId: 'asset-watch',
+      assetRootNodeId: 'asset-root',
+      overrides: mountOverrides,
+    },
+  }
+  const assetGraph = createAssetGraph()
+
+  const renderGraph = assemble(project, new Map([
+    ['product-slot-primary', assetGraph],
+  ]))
+
+  // The asset-child's transform should be overridden
+  assert.deepEqual(renderGraph.nodes['asset-child'].t, [1, 2, 3])
+  // Original rotation and scale should be preserved (no override for those)
+  assert.deepEqual(renderGraph.nodes['asset-child'].r, [0, 0, 0, 1])
+  assert.deepEqual(renderGraph.nodes['asset-child'].s, [1, 1, 1])
+})
