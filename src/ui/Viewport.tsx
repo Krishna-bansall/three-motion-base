@@ -7,7 +7,6 @@ import { useRef, useEffect, useState, useCallback } from 'react'
 import { useEngineStore } from '../store/useEngineStore'
 import type { EngineAPI } from '../engine/EngineAPI'
 import type { TransformGizmoMode } from '../engine/runtime/types'
-import { TransformWidget } from './TransformWidget'
 
 type ModelSource =
   | { type: 'sample' }
@@ -74,7 +73,7 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
       try {
         switch (modelSource.type) {
           case 'sample':
-            await engine.loadModel('/models/sample.glb')
+            await engine.loadModel(`${import.meta.env.BASE_URL}models/sample.glb`)
             break
           case 'file':
             await engine.loadModelFromFile(modelSource.file)
@@ -245,8 +244,6 @@ export function Viewport({ engine, modelSource }: ViewportProps) {
           <span>{toast.label}</span>
         </div>
       )}
-      {/* TODO: re-enable TransformWidget when ready */}
-      {/* <TransformWidget engine={engine} /> */}
       {isLoading && (
         <div className="viewport-loader">
           <div className="loader-spinner" />

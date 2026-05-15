@@ -1,10 +1,12 @@
 import type { EnvironmentPreview, HDRIPreset } from './types'
 
+const publicAsset = (path: string): string => `${import.meta.env.BASE_URL}${path}`
+
 /** Bundled HDRI files served from `public/hdri`. */
 export const HDRI_PATHS: Record<HDRIPreset, string> = {
-  studio: '/hdri/studio.hdr',
-  moody: '/hdri/moody.hdr',
-  daylight: '/hdri/daylight.hdr',
+  studio: publicAsset('hdri/studio.hdr'),
+  moody: publicAsset('hdri/moody.hdr'),
+  daylight: publicAsset('hdri/daylight.hdr'),
 }
 
 const PREVIEW_THEMES: Record<

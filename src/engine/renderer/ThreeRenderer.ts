@@ -143,7 +143,7 @@ export class ThreeRenderer {
     // Ensure the gizmo helper stays in sync with the attached object
     // (TransformControls updates the helper during the render loop)
     if (this.transformControls.enabled) {
-      this.transformControls.update()
+      this.transformControls.update(delta)
     }
 
     this.postProcessing.render(elapsed)
