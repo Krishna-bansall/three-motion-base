@@ -168,6 +168,9 @@ function applyMountOverrides(renderGraph: RenderGraphDoc, overrides: MountOverri
 
   for (const [nodeId, materialOverride] of Object.entries(overrides.materials)) {
     const node = renderGraph.nodes[nodeId]
+    if (node) {
+      if (materialOverride.materialId) node.materialId = materialOverride.materialId
+    }
     if (node?.materialId) {
       const material = renderGraph.materials[node.materialId]
       if (material) {

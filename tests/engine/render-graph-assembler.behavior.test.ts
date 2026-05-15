@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { applyStudioPreset, createDefaultProject, replaceProductSlotAsset } from '../../src/engine/project/document.ts'
 import { createEmptySceneDoc } from '../../src/engine/scene/snapshot.ts'
-import type { AssetGraphDoc, RenderGraphDoc, SceneDoc } from '../../src/engine/scene/types.ts'
+import type { AssetGraphDoc, SceneDoc } from '../../src/engine/scene/types.ts'
 import type { MountOverrides } from '../../src/engine/project/types.ts'
 import { assemble } from '../../src/engine/renderGraph/RenderGraphAssembler.ts'
 
@@ -268,6 +268,53 @@ test('assemble applies material overrides from mount overrides to mounted asset 
   assert.equal(renderGraph.materials['material-watch-body'].metalness, 0.1)
   // Base color should be preserved (not overridden)
   assert.deepEqual(renderGraph.materials['material-watch-body'].baseColor, [0.7, 0.2, 0.1])
+})
+
+test('assemble applies material replacement overrides before patching material values', () => {
+  const baseProject = createDefaultProject()
+  const project = replaceProductSlotAsset(baseProject, {
+    uri: 'file:///imports/watch.glb',
+    rootNodeId: 'asset-root',
+  })
+  const mountOverrides: MountOverrides = {
+    transforms: {},
+    materials: {
+      'asset-child': {
+        materialId: 'material-watch-alt',
+        roughness: 0.2,
+      },
+    },
+    visibility: {},
+    variants: {},
+  }
+  const slotId = project.studioScene.primaryProductSlotId
+  project.studioScene.productSlots[slotId]!.asset = {
+    ...project.studioScene.productSlots[slotId]!.asset!,
+    mount: {
+      id: `mount-${slotId}`,
+      kind: 'product-slot',
+      slotId,
+      assetId: 'asset-watch',
+      assetRootNodeId: 'asset-root',
+      overrides: mountOverrides,
+    },
+  }
+  const assetGraph = createAssetGraph()
+  assetGraph.materials['material-watch-alt'] = {
+    baseColor: [0.1, 0.4, 0.9],
+    roughness: 0.7,
+    metalness: 0.3,
+    envMapIntensity: 0.6,
+  }
+
+  const renderGraph = assemble(project, new Map([
+    ['product-slot-primary', assetGraph],
+  ]))
+
+  assert.equal(renderGraph.nodes['asset-child'].materialId, 'material-watch-alt')
+  assert.equal(renderGraph.materials['material-watch-alt'].roughness, 0.2)
+  assert.deepEqual(renderGraph.materials['material-watch-alt'].baseColor, [0.1, 0.4, 0.9])
+  assert.equal(renderGraph.materials['material-watch-body'].roughness, 0.4)
 })
 
 test('assemble applies transform overrides from mount overrides to mounted asset nodes', () => {
