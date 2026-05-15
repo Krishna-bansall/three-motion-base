@@ -1,8 +1,9 @@
-import type { NodeId } from '../scene/types'
+import type { MaterialId, NodeId, Quat, Vec3 } from '../scene/types'
 
 export type ProjectId = string
 export type StudioSceneId = string
 export type ProductSlotId = string
+export type AssetId = string
 export type EnvironmentId = string
 export type LookId = string
 export type ShotId = string
@@ -17,6 +18,9 @@ export type StudioTransformEdit = 'position' | 'rotation' | 'scale'
 export type LookPresetId = 'studio-neutral' | 'warm-hero' | 'cool-contrast'
 export type AnimationTargetKind = 'object' | 'camera' | 'light'
 export type SequenceCategory = 'objects' | 'camera' | 'lights'
+export type RenderGraphMountId = string
+export type RenderGraphMountKind = 'product-slot' | 'studio-set'
+export type MountOverrideTargetId = NodeId
 export type TrackId = string
 export type MotionItemId = string
 export type MotionItemKind = 'layer' | 'group'
@@ -39,6 +43,18 @@ export type MotionPresetId =
   | 'camera-roundturn'
   | 'light-pulse'
   | 'light-sweep'
+
+export const RENDER_GRAPH_MOUNT_KINDS = {
+  productSlot: 'product-slot',
+  studioSet: 'studio-set',
+} as const satisfies Record<string, RenderGraphMountKind>
+
+export const MOUNT_OVERRIDE_KINDS = {
+  transform: 'transform',
+  material: 'material',
+  visibility: 'visibility',
+  variant: 'variant',
+} as const
 
 export const CAMERA_KINDS = {
   perspective: 'perspective',
@@ -87,6 +103,46 @@ export interface ProductSlot {
 export interface ProductSlotAsset {
   uri: string
   rootNodeId: NodeId
+  assetId?: AssetId
+  mount?: RenderGraphMount
+}
+
+export interface RenderGraphMount {
+  id: RenderGraphMountId
+  kind: RenderGraphMountKind
+  slotId: ProductSlotId
+  assetId: AssetId
+  assetRootNodeId: NodeId
+  overrides: MountOverrides
+}
+
+export interface MountOverrides {
+  transforms: Record<MountOverrideTargetId, MountTransformOverride>
+  materials: Record<MountOverrideTargetId, MountMaterialOverride>
+  visibility: Record<MountOverrideTargetId, MountVisibilityOverride>
+  variants: Record<MountOverrideTargetId, MountVariantOverride>
+}
+
+export interface MountTransformOverride {
+  t?: Vec3
+  r?: Quat
+  s?: Vec3
+}
+
+export interface MountMaterialOverride {
+  materialId?: MaterialId
+  baseColor?: [number, number, number]
+  roughness?: number
+  metalness?: number
+  envMapIntensity?: number
+}
+
+export interface MountVisibilityOverride {
+  visible: boolean
+}
+
+export interface MountVariantOverride {
+  variantId: string
 }
 
 export interface StudioEnvironment {
